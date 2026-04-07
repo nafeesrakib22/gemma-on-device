@@ -1,6 +1,7 @@
 import litert_lm
 import gradio as gr
 import os
+import time
 from tools.web_search import web_search
 
 # Configuration
@@ -163,8 +164,17 @@ def chat_response(message, history, audio_recording):
     try:
         with engine.create_conversation(messages=messages, tools=tools) as conversation:
             partial_message = ""
+            # Start timing for TTFT — after context setup, right before generation
+            start_time = time.perf_counter()
+            first_token_received = False
             # Send the actual structured content list
             for chunk in conversation.send_message_async({"role": "user", "content": current_user_content_list}):
+                # Record TTFT on first chunk
+                if not first_token_received:
+                    ttft = time.perf_counter() - start_time
+                    print(f"\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
+                    first_token_received = True
+
                 for item in chunk.get("content", []):
                     if item.get("type") == "text":
                         partial_message += item["text"]
@@ -217,4 +227,4 @@ with gr.Blocks(title="Gemma 2b Voice Chat") as demo:
 
 if __name__ == "__main__":
     # In Gradio 6.0+, 'theme' is passed to launch() instead of the constructor
-    demo.launch(share=True, theme=theme)
+    demo.launch(theme=theme)
