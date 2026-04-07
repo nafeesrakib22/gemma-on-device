@@ -1,4 +1,4 @@
-# Gemma 2b Voice-Enabled Chat
+# Gemma 2b On-Device Voice-Enabled Chat
 
 A responsive, multi-modal chat application using the LiteRT-LM (formerly TensorFlow Lite) Python API and the Gemma 2b model. This application features a Gradio-based interface that supports text, image, and audio inputs (including live microphone recording) with integrated web search capabilities.
 
@@ -17,8 +17,8 @@ A responsive, multi-modal chat application using the LiteRT-LM (formerly TensorF
 
 1. **Clone the repository**:
    ```bash
-   git clone <your-repo-url>
-   cd Gemma
+   git clone https://github.com/nafeesrakib22/gemma-on-device.git
+   cd gemma-on-device
    ```
 
 2. **Create a virtual environment**:
