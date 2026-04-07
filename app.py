@@ -10,7 +10,7 @@ MODEL_PATH = "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm"
 engine = litert_lm.Engine(
     MODEL_PATH,
     audio_backend=litert_lm.Backend.CPU,
-    vision_backend=litert_lm.Backend.GPU,
+    vision_backend=litert_lm.Backend.CPU,
 )
 
 import re
