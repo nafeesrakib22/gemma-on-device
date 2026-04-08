@@ -16,8 +16,7 @@ def chat_response(message, history):
     # 1. Build system prompt
     system_instruction = (
         "You are a helpful AI assistant. "
-        "You can call web_search for requests that require current internet data: "
-        "news, live scores, stock prices, recent events, etc."
+
     )
     messages = [
         {"role": "system", "content": [{"type": "text", "text": system_instruction}]}
