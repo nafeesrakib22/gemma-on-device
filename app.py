@@ -1,7 +1,6 @@
 import litert_lm
 import gradio as gr
 import time
-from tools.web_search import web_search
 
 # Configuration
 MODEL_PATH = "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm"
@@ -44,9 +43,9 @@ def chat_response(message, history):
     # Yield immediately so the UI shows the user message
     yield history, gr.update(value="")
 
-    # 5. Run generation with tool support
+    # 5. Run generation
     try:
-        with engine.create_conversation(messages=messages, tools=[web_search]) as conversation:
+        with engine.create_conversation(messages=messages) as conversation:
             partial_message = ""
             # Start timing for TTFT — after context setup, right before generation
             start_time = time.perf_counter()
@@ -81,7 +80,7 @@ with gr.Blocks(title="Gemma Chat") as demo:
     gr.Markdown("# Gemma Chat")
     gr.Markdown("Chat with Gemma using text. The model can search the web for current information.")
 
-    chatbot = gr.Chatbot(type="messages")
+    chatbot = gr.Chatbot()
 
     with gr.Row():
         msg = gr.Textbox(
