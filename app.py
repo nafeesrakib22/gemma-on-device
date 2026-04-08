@@ -5,69 +5,90 @@ import time
 # Configuration
 MODEL_PATH = "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm"
 
-# Initialize the Engine (text-only — no vision/audio backends needed)
+SYSTEM_INSTRUCTION = "You are a helpful AI assistant."
+
+# Initialize the Engine once (text-only)
 engine = litert_lm.Engine(MODEL_PATH, backend=litert_lm.Backend.CPU)
+
+# ---------------------------------------------------------------------------
+# Persistent conversation — keeps the KV cache alive across turns so the
+# model only prefills the NEW tokens on each message, not the entire history.
+# ---------------------------------------------------------------------------
+_conversation = None
+
+def _get_conversation():
+    """Return the live conversation, creating one if needed."""
+    global _conversation
+    if _conversation is None:
+        system_message = {
+            "role": "system",
+            "content": [{"type": "text", "text": SYSTEM_INSTRUCTION}],
+        }
+        ctx = engine.create_conversation(messages=[system_message])
+        _conversation = ctx.__enter__()
+        print("[INFO] New conversation started.")
+    return _conversation
+
+def _reset_conversation():
+    """Close the current conversation and clear the KV cache."""
+    global _conversation
+    if _conversation is not None:
+        try:
+            _conversation.__exit__(None, None, None)
+        except Exception:
+            pass
+        _conversation = None
+    print("[INFO] Conversation reset.")
 
 
 def chat_response(message, history):
     """
-    Handles text messages from Gradio and returns a streaming response.
+    Handles a text message and streams the model response.
+    The conversation object is kept alive between calls so the KV cache
+    is reused — only the new user tokens are prefilled each turn.
     """
-    # 1. Build system prompt
-    system_instruction = (
-        "You are a helpful AI assistant. "
-
-    )
-    messages = [
-        {"role": "system", "content": [{"type": "text", "text": system_instruction}]}
-    ]
-
-    # 2. Process chat history
-    for entry in history:
-        role = entry.get("role")
-        content = entry.get("content")
-        if isinstance(content, str):
-            formatted_content = [{"type": "text", "text": content}]
-        else:
-            formatted_content = [{"type": "text", "text": str(content)}]
-        messages.append({"role": role, "content": formatted_content})
-
-    # 3. Build current user content
+    conversation = _get_conversation()
     current_user_content = [{"type": "text", "text": message}]
 
-    # 4. Append user message and placeholder assistant turn to history
+    # Update Gradio history for display
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": ""})
-
-    # Yield immediately so the UI shows the user message
     yield history, gr.update(value="")
 
-    # 5. Run generation
     try:
-        with engine.create_conversation(messages=messages) as conversation:
-            partial_message = ""
-            # Start timing for TTFT — after context setup, right before generation
-            start_time = time.perf_counter()
-            first_token_received = False
+        partial_message = ""
+        start_time = time.perf_counter()
+        first_token_received = False
 
-            for chunk in conversation.send_message_async({"role": "user", "content": current_user_content}):
-                # Record TTFT on first chunk
-                if not first_token_received:
-                    ttft = time.perf_counter() - start_time
-                    print(f"\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
-                    first_token_received = True
+        for chunk in conversation.send_message_async({"role": "user", "content": current_user_content}):
+            if not first_token_received:
+                ttft = time.perf_counter() - start_time
+                print(f"\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
+                first_token_received = True
 
-                for item in chunk.get("content", []):
-                    if item.get("type") == "text":
-                        partial_message += item["text"]
-                        history[-1]["content"] = partial_message
-                        yield history, gr.update()
+            for item in chunk.get("content", []):
+                if item.get("type") == "text":
+                    partial_message += item["text"]
+                    print(item["text"], end="", flush=True)
+                    history[-1]["content"] = partial_message
+                    yield history, gr.update()
+
+        print()  # newline after generation completes
+
     except Exception as e:
         history[-1]["content"] = f"Error: {str(e)}"
         yield history, gr.update()
 
 
-# Build the UI
+def new_chat():
+    """Reset the persistent conversation and clear the UI."""
+    _reset_conversation()
+    return [], gr.update(value="")
+
+
+# ---------------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------------
 theme = gr.themes.Soft(
     primary_hue="indigo",
     secondary_hue="slate",
@@ -77,7 +98,7 @@ theme = gr.themes.Soft(
 
 with gr.Blocks(title="Gemma Chat") as demo:
     gr.Markdown("# Gemma Chat")
-    gr.Markdown("Chat with Gemma using text. The model can search the web for current information.")
+    gr.Markdown("Chat with Gemma. The conversation context is preserved across turns for fast responses.")
 
     chatbot = gr.Chatbot()
 
@@ -88,6 +109,7 @@ with gr.Blocks(title="Gemma Chat") as demo:
             scale=4,
         )
         send_btn = gr.Button("Send", scale=1, variant="primary")
+        new_chat_btn = gr.Button("New Chat", scale=1, variant="secondary")
 
     def submit(message, history):
         if not message.strip():
@@ -96,6 +118,7 @@ with gr.Blocks(title="Gemma Chat") as demo:
 
     msg.submit(submit, inputs=[msg, chatbot], outputs=[chatbot, msg])
     send_btn.click(submit, inputs=[msg, chatbot], outputs=[chatbot, msg])
+    new_chat_btn.click(new_chat, inputs=[], outputs=[chatbot, msg])
 
 if __name__ == "__main__":
     demo.launch(theme=theme)
