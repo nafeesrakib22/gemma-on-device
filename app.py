@@ -74,6 +74,8 @@ def chat_response(message, history):
                     yield history, gr.update()
 
         print()  # newline after generation completes
+        total_time = time.perf_counter() - start_time
+        print(f"[METRICS] Total Generation Time: {total_time:.3f}s")
 
     except Exception as e:
         history[-1]["content"] = f"Error: {str(e)}"
