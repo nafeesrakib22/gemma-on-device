@@ -1,7 +1,6 @@
 import litert_lm
 import gradio as gr
 import time
-
 import os
 
 # Configuration — override MODEL_PATH env var for Docker deployments
@@ -21,7 +20,7 @@ Core Survey Rules (STRICT):
 2. TRACKING: প্রতিটি উত্তরের পর চ্যাট হিস্ট্রি দেখুন। আপনি সর্বশেষ যে নম্বর প্রশ্নটি করেছেন, তার পরের নম্বর প্রশ্নটি করুন। 
 3. SKIP LOGIC: ব্যবহারকারী "জানিনা/জানি না/বলতে পারছি না" বললেই ১০০% নিশ্চিতভাবে পরের প্রশ্নে চলে যান। একইভাবে "আচ্ছা, আমি পরের প্রশ্নে চলে যাচ্ছি।" বলে সাথে সাথে পরের প্রশ্নটি করুন।
 4. VALID ANSWERS: "হয়তো," "যতদূর জানি," "মনে হয়" জাতীয় উত্তরকে সঠিক হিসেবে গণ্য করে পরের প্রশ্নে যান।
-5. UNRELATED/OUT-OF-SCOPE: ব্যবহারকারী প্রশ্ন (`?`) করলে "সব বিষয়ে ধারণা নেই" বলে আগের অসম্পূর্ণ প্রশ্নে ফিরে যান।
+5. UNRELATED/OUT-OF-SCOPE: ব্যবহারকারী প্রশ্ন (`?`) করলে ছোট করে উত্তর দিন (যেমন: "আমি ঐশী, একজন সার্ভে এজেন্ট") এবং অবশ্যই সাথে সাথে আগের অসম্পূর্ণ প্রশ্নটিতে ফিরে যান (যেমন: "আমরা কি সার্ভেটি চালিয়ে যেতে পারি? ২. প্রশ্ন...")।
 
 === Questions ===
 ১. আপনি কি একজেনটেক ক্লাউড সম্পর্কে জানেন?
@@ -44,8 +43,8 @@ Model: ধন্যবাদ। ১. আপনি কি একজেনটে�
 User: জানিনা
 Model: আচ্ছা, আমি পরের প্রশ্নে চলে যাচ্ছি। ২. একজেনটেক ক্লাউড কি পাবলিক ক্লাউড, প্রাইভেট ক্লাউড, নাকি হাইব্রিড ক্লাউড প্ল্যাটফর্ম?
 
-User: তোমার বস কে?
-Model: ধন্যবাদ, আমি তো একজন সার্ভে এজেন্ট, তাই এই সব বিষয়ে আমার ধারণা নেই। আমরা কি সার্ভেটি চালিয়ে যেতে পারি? ২. একজেনটেক ক্লাউড কি পাবলিক ক্লাউড, প্রাইভেট ক্লাউড, নাকি হাইব্রিড ক্লাউড প্ল্যাটফর্ম?
+User: তোমার নাম কি?
+Model: ধন্যবাদ, আমি ঐশী। আমি একজন সার্ভে এজেন্ট। আমরা কি সার্ভেটি চালিয়ে যেতে পারি? ২. একজেনটেক ক্লাউড কি পাবলিক ক্লাউড, প্রাইভেট ক্লাউড, নাকি হাইব্রিড ক্লাউড প্ল্যাটফর্ম?
 """
 
 # Initialize the Engine once (text-only)
@@ -92,76 +91,55 @@ def chat_response(message, history):
     current_user_content = [{"type": "text", "text": message}]
 
     # Update Gradio history for display
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": ""})
-    yield history, gr.update(value="")
+    history.append([message, ""])
 
-    try:
-        partial_message = ""
-        start_time = time.perf_counter()
-        first_token_received = False
+    # Timing / Metrics
+    start_time = time.perf_counter()
+    first_token_time = None
+    full_response = ""
 
-        for chunk in conversation.send_message_async({"role": "user", "content": current_user_content}):
-            if not first_token_received:
-                ttft = time.perf_counter() - start_time
-                print(f"\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
-                first_token_received = True
+    # Stream the tokens
+    for chunk in conversation.send_message_async(current_user_content):
+        if first_token_time is None:
+            first_token_time = time.perf_counter()
+            ttft = first_token_time - start_time
+            print(f"\\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
 
-            for item in chunk.get("content", []):
-                if item.get("type") == "text":
-                    partial_message += item["text"]
-                    print(item["text"], end="", flush=True)
-                    history[-1]["content"] = partial_message
-                    yield history, gr.update()
+        full_response += chunk
+        history[-1][1] = full_response
+        yield history
 
-        print()  # newline after generation completes
-        total_time = time.perf_counter() - start_time
-        print(f"[METRICS] Total Generation Time: {total_time:.3f}s")
-
-    except Exception as e:
-        history[-1]["content"] = f"Error: {str(e)}"
-        yield history, gr.update()
+    total_time = time.perf_counter() - start_time
+    print(f"[METRICS] Total Generation Time: {total_time:.3f}s")
 
 
-def new_chat():
-    """Reset the persistent conversation and clear the UI."""
+def clear_chat():
+    """Reset the Gradio UI and the internal model conversation."""
     _reset_conversation()
-    return [], gr.update(value="")
+    return None
 
 
-# ---------------------------------------------------------------------------
-# UI
-# ---------------------------------------------------------------------------
-theme = gr.themes.Soft(
-    primary_hue="indigo",
-    secondary_hue="slate",
-    neutral_hue="slate",
-    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
-)
+# Build Gradio UI
+with gr.Blocks(title="Axentec Survey Agent (Gemma-2b)") as demo:
+    gr.Markdown("# 🤖 Axentec Survey Agent")
+    gr.Markdown("Survey powered by Gemma-2b-it with persistent KV cache.")
 
-with gr.Blocks(title="Gemma Chat") as demo:
-    gr.Markdown("# Gemma Chat")
-    gr.Markdown("Chat with Gemma. The conversation context is preserved across turns for fast responses.")
-
-    chatbot = gr.Chatbot()
-
+    chatbot = gr.Chatbot(height=500)
+    msg = gr.Textbox(placeholder="এখানে আপনার বার্তা লিখুন...", label="ইউজার ইনপুট")
+    
     with gr.Row():
-        msg = gr.Textbox(
-            placeholder="Type a message...",
-            show_label=False,
-            scale=4,
-        )
-        send_btn = gr.Button("Send", scale=1, variant="primary")
-        new_chat_btn = gr.Button("New Chat", scale=1, variant="secondary")
+        submit_btn = gr.Button("পাঠান", variant="primary")
+        clear_btn = gr.Button("সব মুছুন")
 
-    def submit(message, history):
-        if not message.strip():
-            return history, ""
-        yield from chat_response(message, history)
+    # Link events
+    msg.submit(chat_response, [msg, chatbot], [chatbot])
+    submit_btn.click(chat_response, [msg, chatbot], [chatbot])
+    clear_btn.click(clear_chat, None, [chatbot], queue=False)
 
-    msg.submit(submit, inputs=[msg, chatbot], outputs=[chatbot, msg])
-    send_btn.click(submit, inputs=[msg, chatbot], outputs=[chatbot, msg])
-    new_chat_btn.click(new_chat, inputs=[], outputs=[chatbot, msg])
+    # Automatically clear textbox after submission
+    submit_btn.click(lambda: "", None, [msg], queue=False)
+    msg.submit(lambda: "", None, [msg], queue=False)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", theme=theme)
+    # Launch Gradio (standard 7860 port for Docker)
+    demo.launch(server_name="0.0.0.0", server_port=7860)
