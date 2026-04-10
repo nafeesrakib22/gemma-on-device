@@ -1,0 +1,10 @@
+gemma-venv/
+__pycache__/
+*.pyc
+*.pyo
+*.profraw
+.git/
+.gradio/
+.gitignore
+README.md
+default.profraw
