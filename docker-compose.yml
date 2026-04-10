@@ -1,0 +1,14 @@
+services:
+  gemma:
+    build: .
+    image: gemma-chat:latest
+    container_name: gemma-chat
+    ports:
+      - "7860:7860"
+    volumes:
+      # Mount the model directory from the host. 
+      # Adjust the local path (left side) if your models are stored elsewhere.
+      - /home/moriarty4k/.litert-lm/models:/models
+    environment:
+      - MODEL_PATH=/models/gemma-e2b/model.litertlm
+    restart: unless-stopped

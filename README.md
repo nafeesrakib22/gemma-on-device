@@ -1,19 +1,32 @@
-# Gemma 2b On-Device Voice-Enabled Chat
+# Gemma 2b On-Device Chat
 
-A responsive, multi-modal chat application using the LiteRT-LM (formerly TensorFlow Lite) Python API and the Gemma 2b model. This application features a Gradio-based interface that supports text, image, and audio inputs (including live microphone recording) with integrated web search capabilities.
+A responsive, text-only chat application using the LiteRT-LM (formerly TensorFlow Lite) Python API and the Gemma 2b model. This application features a Gradio-based interface with persistent conversation context and performance metrics.
 
 ## Features
-- **Multi-modal Interaction**: Chat using text, images, or audio.
-- **Voice-Enabled**: Direct audio perception using LiteRT-LM.
-- **Web Search**: Integrated DuckDuckGo search for real-time information.
+- **Text Interaction**: Optimized for fast text-based chat.
+- **Persistent Context**: Uses KV caching to maintain conversation history efficiently across turns.
+- **Performance Metrics**: Reports Time to First Token (TTFT) and Total Generation Time.
 - **Premium UI**: Modern, responsive interface built with Gradio.
 
 ## Prerequisites
-- **Python 3.10+** (tested with Python 3.12).
+- **Python 3.12+**
+- **Docker & Docker Compose** (optional, for containerized deployment)
 - **LiteRT-LM Model**: You need the `model.litertlm` file for Gemma 2b.
-- **System Dependencies**: Ensure you have library support for audio (e.g., `libsndfile` on Linux).
 
-## Installation
+## Running with Docker (Recommended)
+
+1. **Prepare the Model**: Ensure your model file is located in a directory accessible to Docker (e.g., `~/.litert-lm/models/gemma-e2b/model.litertlm`).
+
+2. **Run with Docker Compose**:
+   ```bash
+   docker compose up -d
+   ```
+   *Note: The `docker-compose.yml` is configured to mount `/home/moriarty4k/.litert-lm/models` by default. Adjust the volume mapping in the file if your models are elsewhere.*
+
+3. **Access the Application**:
+   Open `http://localhost:7860` in your browser.
+
+## Manual Installation (Local)
 
 1. **Clone the repository**:
    ```bash
@@ -21,59 +34,21 @@ A responsive, multi-modal chat application using the LiteRT-LM (formerly TensorF
    cd gemma-on-device
    ```
 
-2. **Create a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Download the Model**:
-   Choose the model version you wish to use and run the corresponding import command:
+3. **Configure Model Path**:
+   Update the `MODEL_PATH` in `app.py` or set the `MODEL_PATH` environment variable.
 
-   - **For Gemma 2b (E2B)**:
-     ```bash
-     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma-e2b 
-     ```
-   - **For Gemma 4b (E4B)**:
-     ```bash
-     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E4B-it-litert-lm gemma-4-E4B-it.litertlm gemma-e4b 
-     ```
-
-   After downloading, you can list the available models using:
+4. **Start the Application**:
    ```bash
-   litert-lm list
+   python app.py
    ```
-
-## Configuration
-
-Before running the application, you must update the model path in `app.py`. 
-
-**Tip:** You can find the absolute path to your downloaded models by running:
-```bash
-litert-lm list
-```
-
-1. Locate the `MODEL_PATH` variable in `app.py` (line 7):
-   ```python
-   MODEL_PATH = "path/to/your/model.litertlm"
-   ```
-2. Update it to the absolute path where your Gemma 2b LiteRT-LM model is stored.
-
-## Running the Application
-
-Start the Gradio server:
-```bash
-python app.py
-```
-
-The application will launch and provide a local URL (usually `http://127.0.0.1:7860`) and a public shareable URL if enabled.
 
 ## Project Structure
 - `app.py`: Main Gradio application.
-- `tools/web_search.py`: Tool for internet search integration.
-- `requirements.txt`: List of Python dependencies.
+- `Dockerfile`: Container definition with security enhancements and healthchecks.
+- `docker-compose.yml`: Simplified deployment configuration.
+- `requirements.txt`: Python dependencies.
