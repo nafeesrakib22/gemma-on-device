@@ -16,4 +16,5 @@ services:
       - /home/moriarty4k/.litert-lm/models:/models
     environment:
       - MODEL_PATH=/models/gemma-e2b/model.litertlm
+      - PYTHONUNBUFFERED=1
     restart: unless-stopped
