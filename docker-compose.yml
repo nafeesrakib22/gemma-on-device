@@ -1,5 +1,10 @@
 services:
   gemma:
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
     build: .
     image: gemma-chat:latest
     container_name: gemma-chat
