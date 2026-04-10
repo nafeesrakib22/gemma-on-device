@@ -37,11 +37,11 @@ A responsive, multi-modal chat application using the LiteRT-LM (formerly TensorF
 
    - **For Gemma 2b (E2B)**:
      ```bash
-     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma-e2b .
+     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma-e2b 
      ```
    - **For Gemma 4b (E4B)**:
      ```bash
-     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E4B-it-litert-lm gemma-4-E4B-it.litertlm gemma-e4b .
+     litert-lm import --from-huggingface-repo=litert-community/gemma-4-E4B-it-litert-lm gemma-4-E4B-it.litertlm gemma-e4b 
      ```
 
    After downloading, you can list the available models using:
