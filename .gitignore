@@ -45,3 +45,5 @@ default.profraw
 .idea/
 .DS_Store
 Thumbs.db
+#Env
+.env
