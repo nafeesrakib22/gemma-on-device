@@ -38,7 +38,7 @@ TSV_FILE_PATH    = os.getenv("TSV_FILE_PATH",   "./data/line_index.tsv")
 NUM_FILES_TO_TEST = int(os.getenv("NUM_FILES_TO_TEST", "5"))
 REPORT_PATH      = os.getenv("REPORT_PATH", "benchmark_report.csv")
 
-JUDGE_MODEL = "gemini-2.5-flash-preview-04-17"
+JUDGE_MODEL = "gemini-2.5-flash"
 ASR_PROMPT       = "Transcribe the provided Khmer audio into Khmer script."
 
 JUDGE_SYSTEM_PROMPT = """You are an expert Khmer linguist evaluating automatic speech recognition output.
@@ -84,9 +84,13 @@ print(f"[INFO] Judge model: {JUDGE_MODEL}")
 # ---------------------------------------------------------------------------
 dataset: list[dict] = []
 with open(TSV_FILE_PATH, newline="", encoding="utf-8") as f:
-    reader = csv.DictReader(f, delimiter="\t")
+    # File has no header; columns are: id <TAB> (empty) <TAB> sentence
+    reader = csv.DictReader(f, fieldnames=["file_name", "_blank", "sentence"], delimiter="\t")
     for row in reader:
-        dataset.append({"file_name": row["file_name"], "ground_truth": row["sentence"]})
+        file_id = row["file_name"].strip()
+        sentence = row["sentence"].strip()
+        if file_id:
+            dataset.append({"file_name": file_id + ".wav", "ground_truth": sentence})
 
 total_available = len(dataset)
 limit = min(NUM_FILES_TO_TEST, total_available)
