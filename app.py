@@ -133,8 +133,8 @@ def clear_chat():
 
 
 # Build Gradio UI
-with gr.Blocks(title="Axentec Survey Agent (Gemma-2b)") as demo:
-    gr.Markdown("# 🤖 Axentec Survey Agent")
+with gr.Blocks(title="Exentec Survey Agent (Gemma-2b)") as demo:
+    gr.Markdown("# 🤖 Exentec Survey Agent")
     gr.Markdown("Survey powered by Gemma-2b-it with persistent KV cache.")
 
     chatbot = gr.Chatbot(height=500)
