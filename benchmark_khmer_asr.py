@@ -38,7 +38,7 @@ TSV_FILE_PATH    = os.getenv("TSV_FILE_PATH",   "./data/line_index.tsv")
 NUM_FILES_TO_TEST = int(os.getenv("NUM_FILES_TO_TEST", "5"))
 REPORT_PATH      = os.getenv("REPORT_PATH", "benchmark_report.csv")
 
-JUDGE_MODEL = "gemini-2.5-flash"
+JUDGE_MODEL = "gemini-3.1-flash-lite-preview"
 ASR_PROMPT       = "Transcribe the provided Khmer audio into Khmer script."
 
 JUDGE_SYSTEM_PROMPT = """You are an expert Khmer linguist evaluating automatic speech recognition output.
@@ -177,40 +177,55 @@ for idx, entry in enumerate(dataset[:limit], start=1):
         report_file.flush()
         continue
 
-    # ── Step 2: Judge with Gemini 2.5 Flash ────────────────────────────────
+    # ── Step 2: Judge with Gemini ──────────────────────────────────────────
     accuracy_score = None
     wrong_words    = []
     explanation    = ""
-    try:
-        judge_prompt = (
-            f"Ground Truth:\n{ground_truth}\n\n"
-            f"Model Transcription:\n{gemma_transcription}"
-        )
-        judge_response = judge_client.models.generate_content(
-            model=JUDGE_MODEL,
-            contents=judge_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=JUDGE_SYSTEM_PROMPT,
-            ),
-        )
-        raw_json = judge_response.text.strip()
+    max_retries    = 5
+    base_delay     = 2
 
-        # Strip markdown code fences if present
-        if raw_json.startswith("```"):
-            raw_json = raw_json.split("```")[1]
-            if raw_json.startswith("json"):
-                raw_json = raw_json[4:]
+    for attempt in range(max_retries):
+        try:
+            judge_prompt = (
+                f"Ground Truth:\n{ground_truth}\n\n"
+                f"Model Transcription:\n{gemma_transcription}"
+            )
+            judge_response = judge_client.models.generate_content(
+                model=JUDGE_MODEL,
+                contents=judge_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=JUDGE_SYSTEM_PROMPT,
+                ),
+            )
+            raw_json = judge_response.text.strip()
 
-        parsed = json.loads(raw_json)
-        accuracy_score = int(parsed.get("accuracy_score", 0))
-        wrong_words    = parsed.get("wrong_words", [])
-        explanation    = parsed.get("explanation", "")
-        scores.append(accuracy_score)
-        print(f"  Score: {accuracy_score}%  |  Wrong words: {wrong_words}")
+            # Strip markdown code fences if present
+            if raw_json.startswith("```"):
+                raw_json = raw_json.split("```")[1]
+                if raw_json.startswith("json"):
+                    raw_json = raw_json[4:]
 
-    except Exception as exc:
-        print(f"  [ERROR] Judge call failed: {exc}")
-        explanation = f"Judge error: {exc}"
+            parsed = json.loads(raw_json)
+            accuracy_score = int(parsed.get("accuracy_score", 0))
+            wrong_words    = parsed.get("wrong_words", [])
+            explanation    = parsed.get("explanation", "")
+            scores.append(accuracy_score)
+            print(f"  Score: {accuracy_score}%  |  Wrong words: {wrong_words}")
+            break  # Success!
+
+        except Exception as exc:
+            exc_str = str(exc)
+            # Retry only on transient "overloaded" or "unavailable" errors
+            if any(msg in exc_str for msg in ["503", "UNAVAILABLE", "high demand", "Deadline Exceeded"]):
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"  [WARN] Judge busy/overloaded. Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+            
+            print(f"  [ERROR] Judge call failed: {exc}")
+            explanation = f"Judge error: {exc}"
+            break
 
     # ── Write result row immediately ────────────────────────────────────────
     writer.writerow({

@@ -47,3 +47,6 @@ default.profraw
 Thumbs.db
 #Env
 .env
+#Data files
+line_index.tsv
+benchmark_report.csv
