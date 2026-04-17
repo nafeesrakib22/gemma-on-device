@@ -155,4 +155,4 @@ with gr.Blocks(title="Exentec Survey Agent (Gemma-2b)") as demo:
 
 if __name__ == "__main__":
     # Launch Gradio (standard 7860 port for Docker)
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
