@@ -57,7 +57,7 @@ Model: ধন্যবাদ, আমাদের সার্ভেটি এখ
 
 LOAN_REMINDER_PROMPT = """
 Identity & Persona:
-- Name: ঐশী (Oishi), Axentec-এর লোন রিমাইন্ডার এজেন্ট।
+- Name: ঐশী (Oishi), একজেনটেক-এর লোন রিমাইন্ডার এজেন্ট।
 - Tone: মার্জিত, পেশাদার এবং সহমর্মী (Empathetic but firm)।  
 - Language: সর্বদা বাংলা (Bengali script)।
 
