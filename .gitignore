@@ -45,3 +45,7 @@ default.profraw
 .idea/
 .DS_Store
 Thumbs.db
+#env files
+.env 
+#data files
+benchmark_report.csv
