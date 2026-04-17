@@ -19,7 +19,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY app.py prompts.py ./
 
 # Ensure the app directory is owned by the non-root user
 RUN chown -R gemma:gemma /app
