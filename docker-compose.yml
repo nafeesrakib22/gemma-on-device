@@ -4,13 +4,16 @@ services:
     container_name: gemma-inference
     volumes:
       - ./models:/models
-    environment:
-      - LLAMA_ARG_MODEL=/models/google_gemma-4-E2B-it-Q4_K_M.gguf
-      - LLAMA_ARG_CTX_SIZE=16384
-      - LLAMA_ARG_N_PARALLEL=5
-      - LLAMA_ARG_THREADS=4
-      - LLAMA_ARG_PORT=8080
-      - LLAMA_ARG_HOST=0.0.0.0
+      - ./system_prompt.txt:/system_prompt.txt
+    command: >
+      -m /models/google_gemma-4-E2B-it-Q4_K_M.gguf
+      -c 16384
+      -np 5
+      -t 8
+      -cb
+      -sp /system_prompt.txt
+      --host 0.0.0.0
+      --port 8080
     restart: unless-stopped
 
   app:

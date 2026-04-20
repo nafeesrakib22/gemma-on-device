@@ -50,20 +50,15 @@ async def lifespan(app: FastAPI):
             retries -= 1
         
         if ready:
-            print("[INFO] Inference backend ready. Priming slots...")
             for i in range(1, 6):
-                # Use a unique 'warmup' ID to avoid polluting actual user session history
-                # This ensures the System Prompt is evaluated once in each of the 5 slots
+                # We only need to trigger the backend once. 
+                # Since -sp is enabled, even a tiny request will pre-fill the global system prompt cache.
                 payload = {
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_INSTRUCTION},
-                        {"role": "user", "content": "Keep the system prompt in cache."}
-                    ],
+                    "messages": [{"role": "user", "content": "hi"}],
                     "stream": False,
                     "max_tokens": 1
                 }
                 try:
-                    # Sequential requests to avoid CPU thrashing during startup
                     await app.state.client.post(INFERENCE_URL, json=payload)
                     print(f"[INFO] Slot {i}/5 primed.")
                 except Exception as e:
@@ -94,9 +89,7 @@ async def chat_endpoint(chat_req: ChatRequest):
     
     # Initialize session history if new
     if session_id not in session_store:
-        session_store[session_id] = [
-            {"role": "system", "content": SYSTEM_INSTRUCTION}
-        ]
+        session_store[session_id] = []
     
     # Add current user message
     session_store[session_id].append({
@@ -108,11 +101,14 @@ async def chat_endpoint(chat_req: ChatRequest):
         first_token_time = None
         full_response = ""
         
+        # Construct payload without the system prompt (it is handled by -sp on the backend)
+        # This ensures the prefix cache is hit every time
         payload = {
+            "model": "gemma",
             "messages": session_store[session_id],
             "stream": True,
             "temperature": 0.7,
-            "max_tokens": 512
+            "max_tokens": 1024
         }
 
         try:
