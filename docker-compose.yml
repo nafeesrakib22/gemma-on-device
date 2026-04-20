@@ -1,21 +1,16 @@
 services:
   inference:
-    build: .
-    image: gemma-inference:latest
+    image: ghcr.io/ggerganov/llama.cpp:server
     container_name: gemma-inference
     volumes:
-      - ./models:/app/models
-    command: >
-      python3 -m llama_cpp.server 
-      --model /app/models/google_gemma-4-E2B-it-Q4_K_M.gguf 
-      --n_ctx 4096 
-      --n_threads 4 
-      --n_slots 5
-    deploy:
-      resources:
-        limits:
-          cpus: '8.0'
-          memory: 6G
+      - ./models:/models
+    environment:
+      - LLAMA_ARG_MODEL=/models/google_gemma-4-E2B-it-Q4_K_M.gguf
+      - LLAMA_ARG_CTX_SIZE=4096
+      - LLAMA_ARG_N_PARALLEL=5
+      - LLAMA_ARG_THREADS=4
+      - LLAMA_ARG_PORT=8080
+      - LLAMA_ARG_HOST=0.0.0.0
     restart: unless-stopped
 
   app:
@@ -25,7 +20,7 @@ services:
     ports:
       - "7860:7860"
     environment:
-      - INFERENCE_URL=http://inference:8000/v1/chat/completions
+      - INFERENCE_URL=http://inference:8080/v1/chat/completions
       - PROMPT_TYPE=survey
     depends_on:
       - inference
