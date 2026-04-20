@@ -1,13 +1,14 @@
-from llama_cpp import Llama
-import time
 import os
 import json
+import time
 import anyio
+import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from llama_cpp import Llama
 from prompts import PROMPTS
 
 # Load .env file
@@ -23,8 +24,6 @@ SYSTEM_INSTRUCTION = PROMPTS.get(PROMPT_TYPE, PROMPTS["survey"])
 
 print(f"[INFO] Using Prompt Type: {PROMPT_TYPE}")
 print(f"[INFO] Model Path: {MODEL_PATH}")
-
-import asyncio
 
 # Global state
 llm = None

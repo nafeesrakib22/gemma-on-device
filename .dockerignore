@@ -17,3 +17,4 @@ benchmark.py
 convo_gemini/
 *.litertlm
 .litert-lm/
+models/
