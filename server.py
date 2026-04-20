@@ -34,38 +34,43 @@ async def lifespan(app: FastAPI):
     # Pre-warming: Initialize sessions to prime the KV cache
     # We do this in a separate task so as not to block the main server startup
     async def warm_up():
-        print("[INFO] Starting pre-warming of 5 sessions...")
+        print("[INFO] Starting sequential pre-warming of 5 KV slots...")
         # Wait for inference backend to be ready
-        retries = 10
+        retries = 15
         ready = False
         while retries > 0 and not ready:
             try:
-                # Assuming /health or / is not available, check if the endpoint responds
                 resp = await app.state.client.get(INFERENCE_URL.replace("/v1/chat/completions", "/health"))
                 if resp.status_code == 200:
                     ready = True
                 else:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(3)
             except:
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
             retries -= 1
         
         if ready:
-            print("[INFO] Inference backend ready. Sending warm-up requests...")
+            print("[INFO] Inference backend ready. Priming slots...")
             for i in range(1, 6):
-                session_id = f"user_{i}"
+                # Use a unique 'warmup' ID to avoid polluting actual user session history
+                # This ensures the System Prompt is evaluated once in each of the 5 slots
                 payload = {
-                    "messages": [{"role": "system", "content": SYSTEM_INSTRUCTION}, {"role": "user", "content": "hi"}],
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": "Keep the system prompt in cache."}
+                    ],
                     "stream": False,
                     "max_tokens": 1
                 }
                 try:
+                    # Sequential requests to avoid CPU thrashing during startup
                     await app.state.client.post(INFERENCE_URL, json=payload)
-                    print(f"[INFO] Warmed up {session_id}")
+                    print(f"[INFO] Slot {i}/5 primed.")
                 except Exception as e:
-                    print(f"[ERROR] Failed to warm up {session_id}: {e}")
+                    print(f"[ERROR] Prime failed for slot {i}: {e}")
+            print("[INFO] PRE-WARMING COMPLETE. You can now run the benchmark.")
         else:
-            print("[WARNING] Could not warm up sessions: Inference backend not reachable.")
+            print("[WARNING] Pre-warming skipped: Inference backend not reachable.")
 
     import asyncio
     asyncio.create_task(warm_up())
