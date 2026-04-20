@@ -45,16 +45,28 @@ async def send_request(client, url, message, session_id, request_id):
     c_ttft_str = f"{client_ttft:.3f}s" if client_ttft is not None else "N/A"
     total_time_str = f"{total_time:.3f}s" if total_time is not None else "N/A"
     
-    print(f"[Request {request_id}] TTFT (Server: {s_ttft_str} | Client: {c_ttft_str}) | Total: {total_time_str} (Actual: {actual_total_time:.3f}s)")
+    print(f"[{request_id}] TTFT (Server: {s_ttft_str} | Client: {c_ttft_str}) | Total: {total_time_str} (Actual: {actual_total_time:.3f}s)")
     
     return {
-        "request_id": request_id,
         "server_ttft": server_ttft,
         "client_ttft": client_ttft,
         "total_time": total_time,
-        "actual_total_time": actual_total_time,
-        "response": full_response
+        "actual_total_time": actual_total_time
     }
+
+async def run_session(client, url, queries, session_id):
+    """Executes all turns in a conversation serially for a single session."""
+    session_results = []
+    for i, query in enumerate(queries):
+        request_id = f"Session {session_id} Turn {i+1}"
+        res = await send_request(client, url, query, session_id, request_id)
+        if res:
+            session_results.append(res)
+        else:
+            # If a turn fails, we might want to stop the session or continue.
+            # Here we'll continue but the failure will be logged in send_request.
+            pass
+    return session_results
 
 async def main():
     parser = argparse.ArgumentParser()
@@ -72,19 +84,20 @@ async def main():
         print("No user queries found in JSON.")
         return
 
-    # Take first N queries or repeat if not enough
-    test_queries = (queries * (args.concurrency // len(queries) + 1))[:args.concurrency]
-
-    print(f"Starting benchmark with {args.concurrency} concurrent requests to {args.url}...")
+    print(f"Starting benchmark with {args.concurrency} concurrent sessions.")
+    print(f"Each session will execute {len(queries)} turns from {args.json}.\n")
     
     async with httpx.AsyncClient(timeout=None) as client:
         tasks = []
-        for i, query in enumerate(test_queries):
-            # Assign a unique session ID to each concurrent request
+        for i in range(args.concurrency):
             session_id = f"user_{i+1}"
-            tasks.append(send_request(client, args.url, query, session_id, i+1))
+            tasks.append(run_session(client, args.url, queries, session_id))
         
-        results = await asyncio.gather(*tasks)
+        # results is a list of lists (one per session)
+        session_results = await asyncio.gather(*tasks)
+
+    # Flatten results from all sessions and turns
+    results = [turn for session in session_results for turn in session]
 
     results = [r for r in results if r is not None]
     
