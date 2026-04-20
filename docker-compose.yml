@@ -1,17 +1,32 @@
 services:
-  gemma:
+  inference:
+    build: .
+    image: gemma-inference:latest
+    container_name: gemma-inference
+    volumes:
+      - ./models:/app/models
+    command: >
+      python3 -m llama_cpp.server 
+      --model /app/models/google_gemma-4-E2B-it-Q4_K_M.gguf 
+      --n_ctx 4096 
+      --n_threads 4 
+      --n_slots 5
     deploy:
       resources:
         limits:
           cpus: '8.0'
           memory: 6G
+    restart: unless-stopped
+
+  app:
     build: .
-    image: gemma-chat:latest
-    container_name: gemma-chat
+    image: gemma-app:latest
+    container_name: gemma-app
     ports:
       - "7860:7860"
-    volumes:
-      - ./models:/app/models
     environment:
-      - PYTHONUNBUFFERED=1
+      - INFERENCE_URL=http://inference:8000/v1/chat/completions
+      - PROMPT_TYPE=survey
+    depends_on:
+      - inference
     restart: unless-stopped

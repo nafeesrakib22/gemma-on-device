@@ -1,60 +1,37 @@
 import os
 import json
 import time
-import anyio
-import asyncio
+import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from llama_cpp import Llama
 from prompts import PROMPTS
 
 # Load .env file
 load_dotenv()
 
 # Configuration
-MODEL_PATH = os.environ.get(
-    "MODEL_PATH",
-    "./models/google_gemma-4-E2B-it-Q4_K_M.gguf",
+INFERENCE_URL = os.environ.get(
+    "INFERENCE_URL",
+    "http://localhost:8000/v1/chat/completions",
 )
 PROMPT_TYPE = os.environ.get("PROMPT_TYPE", "survey")
 SYSTEM_INSTRUCTION = PROMPTS.get(PROMPT_TYPE, PROMPTS["survey"])
 
 print(f"[INFO] Using Prompt Type: {PROMPT_TYPE}")
-print(f"[INFO] Model Path: {MODEL_PATH}")
+print(f"[INFO] Inference Backend: {INFERENCE_URL}")
 
-# Global state
-llm = None
-# llama-cpp-python has its own internal locking/queuing, 
-# but for Gemma 2's specific architecture on CPU, we'll keep a simple lock 
-# to ensure stability during high-concurrency batching.
-engine_lock = asyncio.Lock()
 # Store history as a list of message dicts: {session_id: [messages]}
 session_store = {}
 
-def _init_engine():
-    """Initialize Llama engine."""
-    global llm
-    print(f"[INFO] Initializing Llama Engine with model: {MODEL_PATH}")
-    llm = Llama(
-        model_path=MODEL_PATH,
-        n_ctx=4096,           # Sufficient context for multi-turn sessions
-        n_threads=8,         # Match vCPUs on c6a.2xlarge
-        n_batch=512,
-        verbose=False,
-        cache=True           # Enable native prompt caching
-    )
-    print("[INFO] Llama Engine initialized and ready.")
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize engine
-    await anyio.to_thread.run_sync(_init_engine)
+    # Prepare shared client
+    app.state.client = httpx.AsyncClient(timeout=None)
     yield
-    # Shutdown
-    print("[INFO] Shutting down Llama Engine.")
+    await app.state.client.aclose()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -65,7 +42,7 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat_endpoint(chat_req: ChatRequest):
     """
-    Handles isolated sessions using llama-cpp-python's chat completion.
+    Proxies requests to the optimized llama-cpp-python backend.
     """
     start_time = time.perf_counter()
     session_id = chat_req.session_id
@@ -76,60 +53,65 @@ async def chat_endpoint(chat_req: ChatRequest):
             {"role": "system", "content": SYSTEM_INSTRUCTION}
         ]
     
-    # Add current user message to local history
+    # Add current user message
     session_store[session_id].append({
         "role": "user", 
         "content": chat_req.message
     })
 
     async def generate_response():
-            lock_acquired_time = time.perf_counter()
-            queue_time = lock_acquired_time - start_time
-            
-            first_token_time = None
-            full_response = ""
-            
-            # Use llama-cpp-python's high-level chat API
-            def run_inference_sync():
-                return llm.create_chat_completion(
-                    messages=session_store[session_id],
-                    stream=True,
-                    temperature=0.7,
-                    max_tokens=512
-                )
+        first_token_time = None
+        full_response = ""
+        
+        payload = {
+            "messages": session_store[session_id],
+            "stream": True,
+            "temperature": 0.7,
+            "max_tokens": 512
+        }
 
-            try:
-                stream = await anyio.to_thread.run_sync(run_inference_sync)
-                
-                for chunk in stream:
-                    delta = chunk['choices'][0]['delta']
-                    if 'content' in delta:
-                        text = delta['content']
+        try:
+            async with app.state.client.stream("POST", INFERENCE_URL, json=payload) as response:
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = chunk['choices'][0]['delta']
+                        if 'content' in delta:
+                            text = delta['content']
+                            
+                            if first_token_time is None:
+                                first_token_time = time.perf_counter()
+                                yield json.dumps({
+                                    "type": "metrics", 
+                                    "ttft": first_token_time - start_time
+                                }) + "\n"
+                            
+                            full_response += text
+                            yield json.dumps({"type": "content", "text": text}) + "\n"
+                    except Exception as e:
+                        continue
                         
-                        if first_token_time is None:
-                            first_token_time = time.perf_counter()
-                            inference_ttft = first_token_time - lock_acquired_time
-                            yield json.dumps({
-                                "type": "metrics", 
-                                "ttft": first_token_time - start_time, # Total TTFT
-                                "queue_time": queue_time,
-                                "inference_ttft": inference_ttft
-                            }) + "\n"
-                        
-                        full_response += text
-                        yield json.dumps({"type": "content", "text": text}) + "\n"
-                        
-            except Exception as e:
-                print(f"[ERROR] Inference failed for session {session_id}: {e}")
-                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
-            
-            # Store the assistant response in history
-            session_store[session_id].append({
-                "role": "assistant",
-                "content": full_response
-            })
-            
-            yield json.dumps({"type": "metrics", "total_time": time.perf_counter() - start_time}) + "\n"
+        except Exception as e:
+            print(f"[ERROR] Proxy failed for session {session_id}: {e}")
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+        
+        # Store the completion
+        session_store[session_id].append({
+            "role": "assistant",
+            "content": full_response
+        })
+        
+        yield json.dumps({
+            "type": "metrics", 
+            "total_time": time.perf_counter() - start_time
+        }) + "\n"
 
     return StreamingResponse(generate_response(), media_type="application/x-ndjson")
 
