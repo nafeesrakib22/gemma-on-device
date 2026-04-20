@@ -13,7 +13,6 @@ venv/
 README.md
 Dockerfile
 docker-compose.yml
-benchmark.py
 convo_gemini/
 *.litertlm
 .litert-lm/
