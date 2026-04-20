@@ -30,6 +30,46 @@ session_store = {}
 async def lifespan(app: FastAPI):
     # Prepare shared client
     app.state.client = httpx.AsyncClient(timeout=None)
+    
+    # Pre-warming: Initialize sessions to prime the KV cache
+    # We do this in a separate task so as not to block the main server startup
+    async def warm_up():
+        print("[INFO] Starting pre-warming of 5 sessions...")
+        # Wait for inference backend to be ready
+        retries = 10
+        ready = False
+        while retries > 0 and not ready:
+            try:
+                # Assuming /health or / is not available, check if the endpoint responds
+                resp = await app.state.client.get(INFERENCE_URL.replace("/v1/chat/completions", "/health"))
+                if resp.status_code == 200:
+                    ready = True
+                else:
+                    await asyncio.sleep(2)
+            except:
+                await asyncio.sleep(2)
+            retries -= 1
+        
+        if ready:
+            print("[INFO] Inference backend ready. Sending warm-up requests...")
+            for i in range(1, 6):
+                session_id = f"user_{i}"
+                payload = {
+                    "messages": [{"role": "system", "content": SYSTEM_INSTRUCTION}, {"role": "user", "content": "hi"}],
+                    "stream": False,
+                    "max_tokens": 1
+                }
+                try:
+                    await app.state.client.post(INFERENCE_URL, json=payload)
+                    print(f"[INFO] Warmed up {session_id}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to warm up {session_id}: {e}")
+        else:
+            print("[WARNING] Could not warm up sessions: Inference backend not reachable.")
+
+    import asyncio
+    asyncio.create_task(warm_up())
+    
     yield
     await app.state.client.aclose()
 

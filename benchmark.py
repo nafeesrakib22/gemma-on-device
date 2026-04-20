@@ -126,7 +126,9 @@ async def main():
     
     if server_ttfts:
         print(f"Avg Client TTFT:    {statistics.mean(client_ttfts):.3f}s (End-to-end)")
+    if queue_times:
         print(f"Avg Queue Time:     {statistics.mean(queue_times):.3f}s (Wait in queue)")
+    if inference_ttfts:
         print(f"Avg Inference TTFT: {statistics.mean(inference_ttfts):.3f}s (Model prefill)")
     
     if total_times:
