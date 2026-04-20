@@ -51,10 +51,12 @@ async def lifespan(app: FastAPI):
         
         if ready:
             for i in range(1, 6):
-                # We only need to trigger the backend once. 
-                # Since -sp is enabled, even a tiny request will pre-fill the global system prompt cache.
+                # Use a specific warm-up message to prime the cache
                 payload = {
-                    "messages": [{"role": "user", "content": "hi"}],
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": "hi"}
+                    ],
                     "stream": False,
                     "max_tokens": 1
                 }
@@ -89,7 +91,9 @@ async def chat_endpoint(chat_req: ChatRequest):
     
     # Initialize session history if new
     if session_id not in session_store:
-        session_store[session_id] = []
+        session_store[session_id] = [
+            {"role": "system", "content": SYSTEM_INSTRUCTION}
+        ]
     
     # Add current user message
     session_store[session_id].append({
