@@ -60,12 +60,12 @@ async def lifespan(app: FastAPI):
                 }
                 try:
                     await app.state.client.post(INFERENCE_URL, json=payload)
-                    print(f"[INFO] Slot {i}/5 primed.")
+                    print(f"[INFO] Slot {i}/5 primed.", flush=True)
                 except Exception as e:
-                    print(f"[ERROR] Prime failed for slot {i}: {e}")
-            print("[INFO] PRE-WARMING COMPLETE. You can now run the benchmark.")
+                    print(f"[ERROR] Prime failed for slot {i}: {e}", flush=True)
+            print("[INFO] PRE-WARMING COMPLETE. You can now run the benchmark.", flush=True)
         else:
-            print("[WARNING] Pre-warming skipped: Inference backend not reachable.")
+            print("[WARNING] Pre-warming skipped: Inference backend not reachable.", flush=True)
 
     import asyncio
     asyncio.create_task(warm_up())
