@@ -10,8 +10,8 @@ services:
       -c 16384
       -np 5
       -t 8
-      -cb
-      -sp /system_prompt.txt
+      --cont-batching
+      --system-prompt-file /system_prompt.txt
       --host 0.0.0.0
       --port 8080
     restart: unless-stopped
