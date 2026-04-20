@@ -50,3 +50,6 @@ Thumbs.db
 #data files
 benchmark_report.csv
 convo_gemini/*
+benchmark.py
+results.json
+models/*
