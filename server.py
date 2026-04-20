@@ -43,7 +43,8 @@ def _init_engine():
         n_ctx=4096,           # Sufficient context for multi-turn sessions
         n_threads=8,         # Match vCPUs on c6a.2xlarge
         n_batch=512,
-        verbose=False
+        verbose=False,
+        cache=True           # Enable native prompt caching
     )
     print("[INFO] Llama Engine initialized and ready.")
 
@@ -82,12 +83,13 @@ async def chat_endpoint(chat_req: ChatRequest):
     })
 
     async def generate_response():
-        async with engine_lock:
+            lock_acquired_time = time.perf_counter()
+            queue_time = lock_acquired_time - start_time
+            
             first_token_time = None
             full_response = ""
             
             # Use llama-cpp-python's high-level chat API
-            # This is already optimized and handles prompting formats correctly
             def run_inference_sync():
                 return llm.create_chat_completion(
                     messages=session_store[session_id],
@@ -96,19 +98,23 @@ async def chat_endpoint(chat_req: ChatRequest):
                     max_tokens=512
                 )
 
-            # Consuming a synchronous iterator from a thread and yielding back to FastAPI
             try:
                 stream = await anyio.to_thread.run_sync(run_inference_sync)
                 
                 for chunk in stream:
-                    # Extract delta content
                     delta = chunk['choices'][0]['delta']
                     if 'content' in delta:
                         text = delta['content']
                         
                         if first_token_time is None:
                             first_token_time = time.perf_counter()
-                            yield json.dumps({"type": "metrics", "ttft": first_token_time - start_time}) + "\n"
+                            inference_ttft = first_token_time - lock_acquired_time
+                            yield json.dumps({
+                                "type": "metrics", 
+                                "ttft": first_token_time - start_time, # Total TTFT
+                                "queue_time": queue_time,
+                                "inference_ttft": inference_ttft
+                            }) + "\n"
                         
                         full_response += text
                         yield json.dumps({"type": "content", "text": text}) + "\n"

@@ -10,6 +10,8 @@ async def send_request(client, url, message, session_id, request_id):
     start_time = time.perf_counter()
     server_ttft = None
     client_ttft = None
+    queue_time = None
+    inference_ttft = None
     total_time = None
     full_response = ""
     
@@ -32,6 +34,10 @@ async def send_request(client, url, message, session_id, request_id):
                 if data["type"] == "metrics":
                     if "ttft" in data:
                         server_ttft = data["ttft"]
+                    if "queue_time" in data:
+                        queue_time = data["queue_time"]
+                    if "inference_ttft" in data:
+                        inference_ttft = data["inference_ttft"]
                     if "total_time" in data:
                         total_time = data["total_time"]
                 elif data["type"] == "content":
@@ -43,13 +49,17 @@ async def send_request(client, url, message, session_id, request_id):
     actual_total_time = time.perf_counter() - start_time
     s_ttft_str = f"{server_ttft:.3f}s" if server_ttft is not None else "N/A"
     c_ttft_str = f"{client_ttft:.3f}s" if client_ttft is not None else "N/A"
+    q_time_str = f"{queue_time:.3f}s" if queue_time is not None else "N/A"
+    i_ttft_str = f"{inference_ttft:.3f}s" if inference_ttft is not None else "N/A"
     total_time_str = f"{total_time:.3f}s" if total_time is not None else "N/A"
     
-    print(f"[{request_id}] TTFT (Server: {s_ttft_str} | Client: {c_ttft_str}) | Total: {total_time_str} (Actual: {actual_total_time:.3f}s)")
+    print(f"[{request_id}] TTFT (Client: {c_ttft_str} | Queue: {q_time_str} | Inference: {i_ttft_str}) | Total: {total_time_str}")
     
     return {
         "server_ttft": server_ttft,
         "client_ttft": client_ttft,
+        "queue_time": queue_time,
+        "inference_ttft": inference_ttft,
         "total_time": total_time,
         "actual_total_time": actual_total_time
     }
@@ -107,19 +117,20 @@ async def main():
 
     server_ttfts = [r["server_ttft"] for r in results if r["server_ttft"] is not None]
     client_ttfts = [r["client_ttft"] for r in results if r["client_ttft"] is not None]
+    queue_times = [r["queue_time"] for r in results if r["queue_time"] is not None]
+    inference_ttfts = [r["inference_ttft"] for r in results if r["inference_ttft"] is not None]
     total_times = [r["total_time"] for r in results if r["total_time"] is not None]
 
     print("\n--- Benchmark Results ---")
     print(f"Concurrency: {args.concurrency}")
     
     if server_ttfts:
-        print(f"Avg Server TTFT: {statistics.mean(server_ttfts):.3f}s")
-    if client_ttfts:
-        print(f"Avg Client TTFT: {statistics.mean(client_ttfts):.3f}s (Inc. overhead)")
-        print(f"Min/Max Client:  {min(client_ttfts):.3f}s / {max(client_ttfts):.3f}s")
+        print(f"Avg Client TTFT:    {statistics.mean(client_ttfts):.3f}s (End-to-end)")
+        print(f"Avg Queue Time:     {statistics.mean(queue_times):.3f}s (Wait in queue)")
+        print(f"Avg Inference TTFT: {statistics.mean(inference_ttfts):.3f}s (Model prefill)")
     
     if total_times:
-        print(f"Avg Generation Time: {statistics.mean(total_times):.3f}s")
+        print(f"Avg Generation Time: {statistics.mean(total_times):.3f}s (Model output)")
 
 if __name__ == "__main__":
     asyncio.run(main())
