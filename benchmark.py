@@ -106,33 +106,29 @@ async def main():
         # results is a list of lists (one per session)
         session_results = await asyncio.gather(*tasks)
 
-    # Flatten results from all sessions and turns
-    results = [turn for session in session_results for turn in session]
-
-    results = [r for r in results if r is not None]
+    # Separate Turn 1 from steady-state (Turn 2+)
+    turn1_results = [session[0] for session in session_results if len(session) > 0]
+    steady_state_results = [turn for session in session_results for i, turn in enumerate(session) if i > 0]
     
-    if not results:
-        print("No successful results.")
-        return
-
-    server_ttfts = [r["server_ttft"] for r in results if r["server_ttft"] is not None]
-    client_ttfts = [r["client_ttft"] for r in results if r["client_ttft"] is not None]
-    queue_times = [r["queue_time"] for r in results if r["queue_time"] is not None]
-    inference_ttfts = [r["inference_ttft"] for r in results if r["inference_ttft"] is not None]
-    total_times = [r["total_time"] for r in results if r["total_time"] is not None]
+    # Calculate stats for steady-state
+    ss_client_ttfts = [r["client_ttft"] for r in steady_state_results if r["client_ttft"] is not None]
+    ss_total_times = [r["total_time"] for r in steady_state_results if r["total_time"] is not None]
+    
+    # Calculate stats for turn 1
+    t1_client_ttfts = [r["client_ttft"] for r in turn1_results if r["client_ttft"] is not None]
 
     print("\n--- Benchmark Results ---")
     print(f"Concurrency: {args.concurrency}")
+    print(f"Total Turns: {len(queries)} (Turn 1 excluded from averages below)")
     
-    if server_ttfts:
-        print(f"Avg Client TTFT:    {statistics.mean(client_ttfts):.3f}s (End-to-end)")
-    if queue_times:
-        print(f"Avg Queue Time:     {statistics.mean(queue_times):.3f}s (Wait in queue)")
-    if inference_ttfts:
-        print(f"Avg Inference TTFT: {statistics.mean(inference_ttfts):.3f}s (Model prefill)")
+    if t1_client_ttfts:
+        print(f"\nAvg Turn 1 TTFT:    {statistics.mean(t1_client_ttfts):.3f}s (Inference Cold Start)")
     
-    if total_times:
-        print(f"Avg Generation Time: {statistics.mean(total_times):.3f}s (Model output)")
+    if ss_client_ttfts:
+        print(f"Avg Steady TTFT:    {statistics.mean(ss_client_ttfts):.3f}s (Turns 2+, KV-Cached)")
+    
+    if ss_total_times:
+        print(f"Avg Steady Gen:     {statistics.mean(ss_total_times):.3f}s (Turns 2+, KV-Cached)")
 
 if __name__ == "__main__":
     asyncio.run(main())
