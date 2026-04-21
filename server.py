@@ -105,22 +105,19 @@ async def chat_endpoint(chat_req: ChatRequest):
         first_token_time = None
         full_response = ""
         
-        # Inject an empty think block as assistant prefill to suppress Gemma 4's
-        # reasoning tokens. The model sees <think>\n</think> already closed and
-        # skips straight to generating the answer. Not stored in session history.
-        messages_with_prefill = session_store[session_id] + [
-            {"role": "assistant", "content": "<think>\n</think>\n"}
-        ]
-
+        # Disable Gemma 4's thinking tokens via enable_thinking=false.
+        # This is the correct internal parameter name as revealed by the llama.cpp
+        # error: "Assistant response prefill is incompatible with enable_thinking."
         payload = {
             "model": "gemma",
-            "messages": messages_with_prefill,
+            "messages": session_store[session_id],
             "stream": True,
             "temperature": 0.1,
             "min_p": 0.05,
             "repeat_penalty": 1.15,
             "stop": ["<end_of_turn>", "</s>", "\nUser:", "\nModel:"],
-            "max_tokens": 256
+            "max_tokens": 256,
+            "enable_thinking": False
         }
 
         try:
