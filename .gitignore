@@ -45,3 +45,6 @@ default.profraw
 .idea/
 .DS_Store
 Thumbs.db
+.env
+models/
+convo_gemini/
