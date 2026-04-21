@@ -1,9 +1,6 @@
-llama-cpp-python[server]
 fastapi
 uvicorn
 httpx
 pydantic
 python-dotenv
 anyio
-litert-lm
-gradio>=4.0.0

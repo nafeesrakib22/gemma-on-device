@@ -112,7 +112,10 @@ async def chat_endpoint(chat_req: ChatRequest):
             "messages": session_store[session_id],
             "stream": True,
             "temperature": 0.1,
-            "max_tokens": 1024
+            "min_p": 0.05,
+            "repeat_penalty": 1.15,
+            "stop": ["<end_of_turn>", "</s>", "\nUser:", "\nModel:"],
+            "max_tokens": 256
         }
 
         try:
