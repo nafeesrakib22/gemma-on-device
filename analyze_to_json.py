@@ -155,10 +155,22 @@ def main():
 
     for i, entry in enumerate(data_to_process):
         print(f"[INFO] Analyzing conversation {i+1} of {len(data_to_process)} using {ENGINE}...")
+        
+        start_time = time.time()
         if ENGINE == "gemma":
             analysis = analyze_with_gemma(engine, entry)
         else:
             analysis = analyze_with_gemini(client, entry)
+        end_time = time.time()
+        
+        duration = end_time - start_time
+        print(f"[INFO] Analysis took {duration:.2f} seconds")
+        
+        # Add metadata to the result
+        analysis["metadata"] = {
+            "engine": ENGINE,
+            "generation_time_seconds": round(duration, 2)
+        }
         
         all_results.append(analysis)
         
