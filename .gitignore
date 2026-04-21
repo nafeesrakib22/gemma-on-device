@@ -50,3 +50,7 @@ Thumbs.db
 #Data files
 line_index.tsv
 benchmark_report.csv
+models/
+transcriptions/
+convo_gemini/
+

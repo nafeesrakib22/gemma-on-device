@@ -17,6 +17,8 @@ import json
 import os
 import sys
 import time
+import tempfile
+from pydub import AudioSegment
 
 from google import genai
 from google.genai import types
@@ -31,7 +33,7 @@ load_dotenv()
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
 MODEL_PATH       = os.getenv(
     "MODEL_PATH",
-    "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm",
+    "/home/moriarty4k/.litert-lm/models/gemma-e4b/model.litertlm",
 )
 AUDIO_DIR_PATH   = os.getenv("AUDIO_DIR_PATH", "./audio_folder")
 TSV_FILE_PATH    = os.getenv("TSV_FILE_PATH",   "./data/line_index.tsv")
@@ -40,6 +42,13 @@ REPORT_PATH      = os.getenv("REPORT_PATH", "benchmark_report.csv")
 
 JUDGE_MODEL = "gemini-3.1-flash-lite-preview"
 ASR_PROMPT       = "Transcribe the provided Khmer audio into Khmer script."
+ASR_SYSTEM_PROMPT = """You are a specialized Khmer Automatic Speech Recognition (ASR) system.
+Your ONLY task is to transcribe Khmer audio into accurate Khmer script.
+- DO NOT translate to English.
+- DO NOT output any English text.
+- DO NOT add commentary or explanations.
+- Output ONLY the Khmer transcription.
+"""
 
 JUDGE_SYSTEM_PROMPT = """You are an expert Khmer linguist evaluating automatic speech recognition output.
 You will receive a Ground Truth transcription and a Model Transcription.
@@ -97,6 +106,18 @@ limit = min(NUM_FILES_TO_TEST, total_available)
 print(f"[INFO] Dataset: {total_available} entries — testing {limit}.")
 
 # ---------------------------------------------------------------------------
+# Audio Pre-processing
+# ---------------------------------------------------------------------------
+def preprocess_audio(input_path: str) -> str:
+    """Converts audio to 16kHz Mono WAV as required by LiteRT-LM."""
+    audio = AudioSegment.from_file(input_path)
+    audio = audio.set_frame_rate(16000).set_channels(1)
+    
+    temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    audio.export(temp_file.name, format="wav")
+    return temp_file.name
+
+# ---------------------------------------------------------------------------
 # CSV report — written incrementally row-by-row
 # ---------------------------------------------------------------------------
 report_fields = [
@@ -138,17 +159,42 @@ for idx, entry in enumerate(dataset[:limit], start=1):
         report_file.flush()
         continue
 
+    # ── Step 0: Pre-process audio (ensure 16kHz Mono) ───────────────────────
+    converted_path = None
+    try:
+        converted_path = preprocess_audio(audio_path)
+        inference_audio_path = converted_path
+        # Verify conversion properties (optional but helpful for debug)
+        check_audio = AudioSegment.from_file(inference_audio_path)
+        print(f"  [INFO] Format: {check_audio.frame_rate}Hz, channels={check_audio.channels}")
+    except Exception as exc:
+        print(f"  [ERROR] Audio pre-processing failed: {exc}")
+        writer.writerow({
+            "file_name": file_name,
+            "accuracy_score": "N/A",
+            "wrong_words": "",
+            "gemma_transcription": f"AUDIO_ERROR: {exc}",
+            "ground_truth": ground_truth,
+            "explanation": "Could not convert audio to 16kHz Mono.",
+        })
+        report_file.flush()
+        continue
+
     # ── Step 1: Transcribe with Gemma 4 E2B ────────────────────────────────
     gemma_transcription = ""
     try:
         user_message = {
             "role": "user",
             "content": [
-                {"type": "audio", "path": audio_path},
+                {"type": "audio", "path": inference_audio_path},
                 {"type": "text",  "text": ASR_PROMPT},
             ],
         }
-        with engine.create_conversation() as conversation:
+        system_message = {
+            "role": "system",
+            "content": [{"type": "text", "text": ASR_SYSTEM_PROMPT}],
+        }
+        with engine.create_conversation(messages=[system_message]) as conversation:
             t0 = time.perf_counter()
             response = conversation.send_message(user_message)
             elapsed = time.perf_counter() - t0
@@ -226,6 +272,13 @@ for idx, entry in enumerate(dataset[:limit], start=1):
             print(f"  [ERROR] Judge call failed: {exc}")
             explanation = f"Judge error: {exc}"
             break
+
+    # ── Cleanup ─────────────────────────────────────────────────────────────
+    if converted_path and os.path.exists(converted_path):
+        try:
+            os.remove(converted_path)
+        except:
+            pass
 
     # ── Write result row immediately ────────────────────────────────────────
     writer.writerow({
