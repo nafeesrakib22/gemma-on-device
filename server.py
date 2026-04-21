@@ -111,7 +111,7 @@ async def chat_endpoint(chat_req: ChatRequest):
             "model": "gemma",
             "messages": session_store[session_id],
             "stream": True,
-            "temperature": 0.7,
+            "temperature": 1,
             "max_tokens": 1024
         }
 
