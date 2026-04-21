@@ -72,7 +72,7 @@ def analyze_with_gemini(client, conversation_data):
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-3.1-flash-lite-preview',
             config={
                 'system_instruction': SYSTEM_PROMPT,
                 'response_mime_type': 'application/json'
