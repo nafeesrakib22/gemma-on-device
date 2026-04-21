@@ -108,21 +108,6 @@ with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
     # Automatically clear textbox after submission
     submit_btn.click(lambda: "", None, [msg], queue=False)
     msg.submit(lambda: "", None, [msg], queue=False)
-    msg = gr.Textbox(placeholder="Type a message..", label="User Input")
-    
-    with gr.Row():
-        submit_btn = gr.Button("Send", variant="primary")
-        clear_btn = gr.Button("Clear")
-
-    # Link events
-    msg.submit(chat_response, [msg, chatbot], [chatbot])
-    submit_btn.click(chat_response, [msg, chatbot], [chatbot])
-    clear_btn.click(clear_chat, None, [chatbot], queue=False)
-
-    # Automatically clear textbox after submission
-    submit_btn.click(lambda: "", None, [msg], queue=False)
-    msg.submit(lambda: "", None, [msg], queue=False)
-
 if __name__ == "__main__":
     # Launch Gradio on a different port than the server
     demo.launch(server_name="0.0.0.0", server_port=7861)
