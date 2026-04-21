@@ -1,110 +1,80 @@
-import litert_lm
+import httpx
 import gradio as gr
 import time
 import os
+import json
+import uuid
 from dotenv import load_dotenv
-from prompts import PROMPTS
 
 # Load .env file
 load_dotenv()
 
-# Configuration — override MODEL_PATH env var for Docker deployments
-MODEL_PATH = os.environ.get(
-    "MODEL_PATH",
-    "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm",
-)
+# Configuration
+SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:7860/chat")
+SESSION_ID = str(uuid.uuid4())
 
-# Select System Instruction based on PROMPT_TYPE
-PROMPT_TYPE = os.environ.get("PROMPT_TYPE", "survey")
-SYSTEM_INSTRUCTION = PROMPTS.get(PROMPT_TYPE, PROMPTS["survey"])
-
-print(f"[INFO] Using Prompt Type: {PROMPT_TYPE}")
-
-
-# Initialize the Engine once (text-only)
-engine = litert_lm.Engine(MODEL_PATH, backend=litert_lm.Backend.CPU)
+print(f"[INFO] Connecting to Backend: {SERVER_URL}")
+print(f"[INFO] Session ID: {SESSION_ID}")
 
 # ---------------------------------------------------------------------------
-# Persistent conversation — keeps the KV cache alive across turns so the
-# model only prefills the NEW tokens on each message, not the entire history.
+# Client Logic
 # ---------------------------------------------------------------------------
-_conversation = None
-
-def _get_conversation():
-    """Return the live conversation, creating one if needed."""
-    global _conversation
-    if _conversation is None:
-        system_message = {
-            "role": "system",
-            "content": [{"type": "text", "text": SYSTEM_INSTRUCTION}],
-        }
-        ctx = engine.create_conversation(messages=[system_message])
-        _conversation = ctx.__enter__()
-        print("[INFO] New conversation started.")
-    return _conversation
-
-def _reset_conversation():
-    """Close the current conversation and clear the KV cache."""
-    global _conversation
-    if _conversation is not None:
-        try:
-            _conversation.__exit__(None, None, None)
-        except Exception:
-            pass
-        _conversation = None
-    print("[INFO] Conversation reset.")
-
 
 def chat_response(message, history):
     """
-    Handles a text message and streams the model response.
-    The conversation object is kept alive between calls so the KV cache
-    is reused — only the new user tokens are prefilled each turn.
+    Sends request to the proxy server and streams the response.
     """
-    conversation = _get_conversation()
-    current_user_content = message
-
-    # Update Gradio history for display (messages format)
+    # Update Gradio history for display
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": ""})
 
-    # Timing / Metrics
     start_time = time.perf_counter()
-    first_token_time = None
     full_response = ""
 
-    for chunk in conversation.send_message_async(current_user_content):
-        if first_token_time is None:
-            first_token_time = time.perf_counter()
-            ttft = first_token_time - start_time
-            print(f"\\n[METRICS] Time to First Token (TTFT): {ttft:.3f}s")
+    # Send streaming request to our proxy server
+    try:
+        with httpx.stream("POST", SERVER_URL, json={"message": message, "session_id": SESSION_ID}, timeout=None) as response:
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-        # Extract text from the dictionary chunk
-        if isinstance(chunk, dict) and "content" in chunk:
-            text = chunk["content"][0].get("text", "")
-            full_response += text
-        else:
-            full_response += chunk
+                if data["type"] == "content":
+                    text = data["text"]
+                    full_response += text
+                    history[-1]["content"] = full_response
+                    yield history
+                
+                elif data["type"] == "metrics":
+                    if "ttft" in data:
+                        print(f"[METRICS] TTFT: {data['ttft']:.3f}s")
+                    if "total_time" in data:
+                        print(f"[METRICS] Total Time: {data['total_time']:.3f}s")
+                
+                elif data["type"] == "error":
+                    history[-1]["content"] = f"Error: {data['message']}"
+                    yield history
+                    break
 
-        history[-1]["content"] = full_response
+    except Exception as e:
+        print(f"[ERROR] Connection failed: {e}")
+        history[-1]["content"] = f"Connection error: {e}"
         yield history
 
-    total_time = time.perf_counter() - start_time
-    print(f"[METRICS] Total Generation Time: {total_time:.3f}s")
-
-
 def clear_chat():
-    """Reset the Gradio UI and the internal model conversation."""
-    _reset_conversation()
+    """Reset the Gradio UI. Note: In this version, we'd need a server endpoint to clear session."""
     return None
 
-
 # Build Gradio UI
-with gr.Blocks(title="Exentec Survey Agent (Gemma-2b)") as demo:
+with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
     gr.Markdown("# 🤖 Exentec Survey Agent")
-    gr.Markdown("Survey powered by Gemma-2b-it with persistent KV cache.")
+    gr.Markdown("Survey powered by Gemma-2b-it (Optimized Inference Architecture)")
 
-    chatbot = gr.Chatbot(height=500)
+    chatbot = gr.Chatbot(height=500, type="messages")
     msg = gr.Textbox(placeholder="Type a message..", label="User Input")
     
     with gr.Row():
@@ -121,5 +91,5 @@ with gr.Blocks(title="Exentec Survey Agent (Gemma-2b)") as demo:
     msg.submit(lambda: "", None, [msg], queue=False)
 
 if __name__ == "__main__":
-    # Launch Gradio (standard 7860 port for Docker)
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    # Launch Gradio on a different port than the server
+    demo.launch(server_name="0.0.0.0", server_port=7861)
