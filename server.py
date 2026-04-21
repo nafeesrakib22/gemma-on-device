@@ -105,11 +105,16 @@ async def chat_endpoint(chat_req: ChatRequest):
         first_token_time = None
         full_response = ""
         
-        # Construct payload without the system prompt (it is handled by -sp on the backend)
-        # This ensures the prefix cache is hit every time
+        # Inject an empty think block as assistant prefill to suppress Gemma 4's
+        # reasoning tokens. The model sees <think>\n</think> already closed and
+        # skips straight to generating the answer. Not stored in session history.
+        messages_with_prefill = session_store[session_id] + [
+            {"role": "assistant", "content": "<think>\n</think>\n"}
+        ]
+
         payload = {
             "model": "gemma",
-            "messages": session_store[session_id],
+            "messages": messages_with_prefill,
             "stream": True,
             "temperature": 0.1,
             "min_p": 0.05,
