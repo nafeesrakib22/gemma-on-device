@@ -24,9 +24,8 @@ def chat_response(message, history):
     """
     Sends request to the proxy server and streams the response.
     """
-    # Update Gradio history for display
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": ""})
+    # Update Gradio history for display (List of tuples format for older Gradio)
+    history.append([message, ""])
 
     start_time = time.perf_counter()
     full_response = ""
@@ -46,7 +45,7 @@ def chat_response(message, history):
                 if data["type"] == "content":
                     text = data["text"]
                     full_response += text
-                    history[-1]["content"] = full_response
+                    history[-1][1] = full_response
                     yield history
                 
                 elif data["type"] == "metrics":
@@ -56,17 +55,17 @@ def chat_response(message, history):
                         print(f"[METRICS] Total Time: {data['total_time']:.3f}s")
                 
                 elif data["type"] == "error":
-                    history[-1]["content"] = f"Error: {data['message']}"
+                    history[-1][1] = f"Error: {data['message']}"
                     yield history
                     break
 
     except Exception as e:
         print(f"[ERROR] Connection failed: {e}")
-        history[-1]["content"] = f"Connection error: {e}"
+        history[-1][1] = f"Connection error: {e}"
         yield history
 
 def clear_chat():
-    """Reset the Gradio UI. Note: In this version, we'd need a server endpoint to clear session."""
+    """Reset the Gradio UI."""
     return None
 
 # Build Gradio UI
@@ -74,7 +73,7 @@ with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
     gr.Markdown("# 🤖 Exentec Survey Agent")
     gr.Markdown("Survey powered by Gemma-2b-it (Optimized Inference Architecture)")
 
-    chatbot = gr.Chatbot(height=500, type="messages")
+    chatbot = gr.Chatbot(height=500)
     msg = gr.Textbox(placeholder="Type a message..", label="User Input")
     
     with gr.Row():
