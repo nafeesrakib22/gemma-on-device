@@ -13,9 +13,12 @@ load_dotenv()
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:7860/chat")
 SESSION_ID = str(uuid.uuid4())
 
+# Robust Version detection
+GR_VERSION = gr.__version__.split(".")
+GR_MAJOR = int(GR_VERSION[0])
+
 print(f"[INFO] Connecting to Backend: {SERVER_URL}")
-print(f"[INFO] Session ID: {SESSION_ID}")
-print(f"[INFO] Gradio Version: {gr.__version__}")
+print(f"[INFO] Gradio Version: {gr.__version__} (Major: {GR_MAJOR})")
 
 # ---------------------------------------------------------------------------
 # Client Logic
@@ -25,11 +28,12 @@ def chat_response(message, history):
     """
     Sends request to the proxy server and streams the response.
     """
-    # Use the universally compatible list-of-tuples format
-    history.append([message, ""])
-
-    start_time = time.perf_counter()
-    full_response = ""
+    # Use dictionary format for Gradio 4.0 and above
+    if GR_MAJOR >= 4:
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": ""})
+    else:
+        history.append([message, ""])
 
     # Send streaming request to our proxy server
     try:
@@ -45,25 +49,32 @@ def chat_response(message, history):
 
                 if data["type"] == "content":
                     text = data["text"]
-                    full_response += text
-                    # Update history using tuple indexing
-                    history[-1][1] = full_response
+                    if GR_MAJOR >= 4:
+                        history[-1]["content"] += text
+                    else:
+                        history[-1][1] += text
                     yield history
                 
                 elif data["type"] == "metrics":
                     if "ttft" in data:
                         print(f"[METRICS] TTFT: {data['ttft']:.3f}s")
-                    if "total_time" in data:
-                        print(f"[METRICS] Total Time: {data['total_time']:.3f}s")
                 
                 elif data["type"] == "error":
-                    history[-1][1] = f"Error: {data['message']}"
+                    err_msg = f"Error: {data['message']}"
+                    if GR_MAJOR >= 4:
+                        history[-1]["content"] = err_msg
+                    else:
+                        history[-1][1] = err_msg
                     yield history
                     break
 
     except Exception as e:
         print(f"[ERROR] Connection failed: {e}")
-        history[-1][1] = f"Connection error: {e}"
+        err_msg = f"Connection error: {e}"
+        if GR_MAJOR >= 4:
+            history[-1]["content"] = err_msg
+        else:
+            history[-1][1] = err_msg
         yield history
 
 def clear_chat():
@@ -75,7 +86,14 @@ with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
     gr.Markdown("# 🤖 Exentec Survey Agent")
     gr.Markdown("Survey powered by Gemma-2b-it (Optimized Inference Architecture)")
 
-    chatbot = gr.Chatbot(height=500)
+    # Only Gradio 4 needs type="messages"
+    # Gradio 5+ has it as default and removed the argument
+    # Gradio 3 does not support it
+    chatbot_kwargs = {"height": 500}
+    if GR_MAJOR == 4:
+        chatbot_kwargs["type"] = "messages"
+    
+    chatbot = gr.Chatbot(**chatbot_kwargs)
     msg = gr.Textbox(placeholder="Type a message..", label="User Input")
     
     with gr.Row():
