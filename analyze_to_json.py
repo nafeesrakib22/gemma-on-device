@@ -105,7 +105,7 @@ def main():
     all_results = []
     
     # Debug limit for testing
-    DEBUG_LIMIT = 2
+    DEBUG_LIMIT = None
     data_to_process = data[:DEBUG_LIMIT] if DEBUG_LIMIT else data
 
     for i, entry in enumerate(data_to_process):
