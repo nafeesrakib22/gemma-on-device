@@ -48,3 +48,4 @@ Thumbs.db
 .env
 models/
 convo_gemini/
+transcriptions/
