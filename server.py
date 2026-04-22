@@ -116,8 +116,7 @@ async def chat_endpoint(chat_req: ChatRequest):
             "min_p": 0.05,
             "repeat_penalty": 1.15,
             "stop": ["<end_of_turn>", "</s>", "\nUser:", "\nModel:"],
-            "max_tokens": 256,
-            "enable_thinking": False
+            "max_tokens": 256
         }
 
         try:
