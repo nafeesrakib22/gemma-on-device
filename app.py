@@ -57,7 +57,15 @@ def chat_response(message, history):
                 
                 elif data["type"] == "metrics":
                     if "ttft" in data:
-                        print(f"[METRICS] TTFT: {data['ttft']:.3f}s")
+                        ttft = data['ttft']
+                        print(f"[METRICS] TTFT: {ttft:.3f}s")
+                        # Attach TTFT to the assistant message metadata
+                        if GR_MAJOR >= 4:
+                            history[-1]["ttft"] = ttft
+                        else:
+                            # For older Gradio versions, we might need a different approach 
+                            # but let's assume we stick to the dict structure if possible or just log it
+                            pass
                 
                 elif data["type"] == "error":
                     err_msg = f"Error: {data['message']}"
@@ -77,9 +85,24 @@ def chat_response(message, history):
             history[-1][1] = err_msg
         yield history
 
+def export_conversation(history):
+    """
+    Saves the current conversation history to a JSON file and returns the file path.
+    """
+    if not history:
+        return None
+    
+    os.makedirs("conversations", exist_ok=True)
+    filename = f"conversations/conversation_{int(time.time())}.json"
+    
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+    
+    return filename
+
 def clear_chat():
     """Reset the Gradio UI."""
-    return None
+    return None, None
 
 # Build Gradio UI
 with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
@@ -99,11 +122,15 @@ with gr.Blocks(title="Exentec Survey Agent (Optimized)") as demo:
     with gr.Row():
         submit_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear")
+        export_btn = gr.Button("Export JSON")
+
+    export_output = gr.File(label="Download Conversation")
 
     # Link events
     msg.submit(chat_response, [msg, chatbot], [chatbot])
     submit_btn.click(chat_response, [msg, chatbot], [chatbot])
-    clear_btn.click(clear_chat, None, [chatbot], queue=False)
+    clear_btn.click(clear_chat, None, [chatbot, export_output], queue=False)
+    export_btn.click(export_conversation, [chatbot], [export_output])
 
     # Automatically clear textbox after submission
     submit_btn.click(lambda: "", None, [msg], queue=False)
