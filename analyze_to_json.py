@@ -153,6 +153,7 @@ def main():
     DEBUG_LIMIT = 2
     data_to_process = data[:DEBUG_LIMIT] if DEBUG_LIMIT else data
 
+    durations = []
     for i, entry in enumerate(data_to_process):
         print(f"[INFO] Analyzing conversation {i+1} of {len(data_to_process)} using {ENGINE}...")
         
@@ -164,6 +165,7 @@ def main():
         end_time = time.time()
         
         duration = end_time - start_time
+        durations.append(duration)
         print(f"[INFO] Analysis took {duration:.2f} seconds")
         
         # Add metadata to the result
@@ -175,14 +177,43 @@ def main():
         all_results.append(analysis)
         
         if (i + 1) % 5 == 0:
-            save_results(all_results)
+            save_results(all_results, durations)
 
-    save_results(all_results)
+    # Calculate statistics
+    if durations:
+        min_time = min(durations)
+        max_time = max(durations)
+        avg_time = sum(durations) / len(durations)
+        
+        print("\n" + "="*30)
+        print("PERFORMANCE SUMMARY")
+        print("="*30)
+        print(f"Total Conversations: {len(durations)}")
+        print(f"Minimum Time:      {min_time:.2f}s")
+        print(f"Maximum Time:      {max_time:.2f}s")
+        print(f"Average Time:      {avg_time:.2f}s")
+        print("="*30 + "\n")
+
+    save_results(all_results, durations)
     print(f"[INFO] Analysis complete. Output saved to {OUTPUT_FILE}")
 
-def save_results(results):
+def save_results(results, durations):
+    summary = {}
+    if durations:
+        summary = {
+            "total_conversations": len(durations),
+            "min_time_seconds": round(min(durations), 2),
+            "max_time_seconds": round(max(durations), 2),
+            "average_time_seconds": round(sum(durations) / len(durations), 2)
+        }
+    
+    output_data = {
+        "summary": summary,
+        "results": results
+    }
+    
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(output_data, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     main()
