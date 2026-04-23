@@ -91,12 +91,13 @@ async def main():
         
         all_sessions = await asyncio.gather(*tasks)
 
-    # Export to JSON
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(all_sessions, f, ensure_ascii=False, indent=2)
-    print(f"\n[INFO] Full conversation log saved to: {args.output}")
-
     # Stats Calculation
+    stats = {
+        "avg_turn1_ttft": None,
+        "avg_steady_ttft": None,
+        "avg_steady_gen_time": None
+    }
+    
     turn1_ttfts = []
     steady_ttfts = []
     steady_gen_times = []
@@ -114,13 +115,30 @@ async def main():
             if turn["client_ttft"]: steady_ttfts.append(turn["client_ttft"])
             if turn["total_time"]: steady_gen_times.append(turn["total_time"])
 
-    print("\n--- Benchmark Results ---")
     if turn1_ttfts:
-        print(f"Avg Turn 1 TTFT:    {statistics.mean(turn1_ttfts):.3f}s")
+        stats["avg_turn1_ttft"] = statistics.mean(turn1_ttfts)
     if steady_ttfts:
-        print(f"Avg Steady TTFT:    {statistics.mean(steady_ttfts):.3f}s")
+        stats["avg_steady_ttft"] = statistics.mean(steady_ttfts)
     if steady_gen_times:
-        print(f"Avg Steady Gen:     {statistics.mean(steady_gen_times):.3f}s")
+        stats["avg_steady_gen_time"] = statistics.mean(steady_gen_times)
+
+    # Export to JSON
+    output_data = {
+        "summary": stats,
+        "sessions": all_sessions
+    }
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(output_data, f, ensure_ascii=False, indent=2)
+    print(f"\n[INFO] Full benchmark results (including stats) saved to: {args.output}")
+
+    # Terminal Output
+    print("\n--- Benchmark Results ---")
+    if stats["avg_turn1_ttft"]:
+        print(f"Avg Turn 1 TTFT:    {stats['avg_turn1_ttft']:.3f}s")
+    if stats["avg_steady_ttft"]:
+        print(f"Avg Steady TTFT:    {stats['avg_steady_ttft']:.3f}s")
+    if stats["avg_steady_gen_time"]:
+        print(f"Avg Steady Gen:     {stats['avg_steady_gen_time']:.3f}s")
 
 if __name__ == "__main__":
     asyncio.run(main())
