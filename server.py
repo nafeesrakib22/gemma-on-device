@@ -58,19 +58,35 @@ def get_or_assign_slot(session_id: str) -> int:
 
 # ─── Prompt Formatting ────────────────────────────────────────────────────────
 
+# Regex for stripping any end-of-turn token variants the model may hallucinate.
+# llama.cpp stops generation at the exact string "<end_of_turn>" but the model
+# sometimes emits corrupted variants (e.g. <end_of_off_turn>, <end_of_f_turn>).
+# Storing these in history creates a feedback loop, so we strip them out.
+import re
+_END_TOKEN_RE = re.compile(r'<end_of[_a-zA-Z]*turn>')
+
+def strip_end_tokens(text: str) -> str:
+    """Remove <end_of_turn> and any hallucinated variants from model output."""
+    return _END_TOKEN_RE.sub('', text).strip()
+
+
 def format_gemma_prompt(messages: list) -> str:
     """
     Convert a list of {role, content} messages into Gemma's native chat format.
 
     Gemma template:
-        <bos><start_of_turn>user
+        <start_of_turn>user
         {system + user_msg}<end_of_turn>
         <start_of_turn>model
         {assistant_msg}<end_of_turn>
         ...
-        <start_of_turn>model\\n      ← generation prompt
+        <start_of_turn>model\n      ← generation prompt
+
+    NOTE: We do NOT prepend <bos> here. llama.cpp automatically adds the BOS
+    token as specified by the model's metadata. Adding it manually would result
+    in a double-BOS which corrupts generation.
     """
-    prompt = "<bos>"
+    prompt = ""
     system_content: str | None = None
 
     for msg in messages:
@@ -191,6 +207,7 @@ async def chat_endpoint(chat_req: ChatRequest):
             "prompt":        prompt,
             "slot_id":       slot_id,       # pin to this session's KV slot
             "cache_prompt":  True,          # reuse cached prefix tokens
+            "add_bos_token": False,         # llama.cpp adds BOS automatically; avoid double-BOS
             # ── Sampling ────────────────────────────────────────────────
             "n_predict":     512,
             "temperature":   1.0,
@@ -239,10 +256,13 @@ async def chat_endpoint(chat_req: ChatRequest):
             print(f"[ERROR] Proxy failed for session {session_id} (slot {slot_id}): {e}")
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
-        # Persist the assistant turn so the next request's prompt includes it
+        # Strip any end-of-turn token artifacts before storing.
+        # Storing corrupted variants (e.g. <end_of_off_turn>) would feed them
+        # back into the prompt and cause a generation feedback loop.
+        clean_response = strip_end_tokens(full_response)
         session_store[session_id].append({
             "role": "assistant",
-            "content": full_response
+            "content": clean_response
         })
 
         yield json.dumps({
