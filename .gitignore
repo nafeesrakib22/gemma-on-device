@@ -53,3 +53,9 @@ convo_gemini/
 results.json
 models/*
 transcriptions/
+benchmark_*.csv
+benchmark_cer_report.csv
+benchmark_cer_report.csv
+benchmark_report_gemma_e2b.csv
+conversations/
+

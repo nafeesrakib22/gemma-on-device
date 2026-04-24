@@ -1,0 +1,178 @@
+[
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "হ্যালো",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "হ্যালো, আমি ঐশী, একজেনটেক থেকে বলছি। আমি একটি সার্ভে করার জন্যে কল দিয়েছি। আপনি কি অংশগ্রহণ করতে পারবেন?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "হ্যাঁ পারব",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "ধন্যবাদ। আপনি কি একজেনটেক ক্লাউড সম্পর্কে জানেন?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "জানি",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "এরপর, একজেনটেক ক্লাউড কি পাবলিক ক্লাউড, প্রাইভেট ক্লাউড, নাকি হাইব্রিড ক্লাউড প্ল্যাটফর্ম?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "পাবলিক",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "এরপর, একজেনটেক ক্লাউড এর সেবার জন্য কি বাংলাদেশি টাকা দিয়ে পেমেন্ট করা যায়?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "যায়",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "এরপর, একজেনটেক ক্লাউড এ কী কী মূল সেবা প্রদান করা হয়?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "জানি না",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "আচ্ছা, পরের প্রশ্নে চলে যাচ্ছি।\n\nএই ক্লাউডের লোকাল ট্রাফিক কি বিডিআই এক্স এর মাধ্যমে রাউট করা হয়, নাকি সাধারণ ইন্টারনেটের মাধ্যমে যায়?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "বিডিআই এক্স এর মাধ্যমে ",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "এরপর, একজেনটেক ক্লাউড এর ডাটা সেন্টার কোন টিয়ার সারটিফাইড?",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "user",
+    "metadata": null,
+    "content": [
+      {
+        "text": "টিয়ার ৫",
+        "type": "text"
+      }
+    ],
+    "options": null
+  },
+  {
+    "role": "assistant",
+    "metadata": null,
+    "content": [
+      {
+        "text": "ধন্যবাদ, আমাদের সার্ভেটি এখানেই শেষ হচ্ছে। আপনার মূল্যবান সময়ের জন্য অনেক ধন্যবাদ। ভালো থাকবেন।",
+        "type": "text"
+      }
+    ],
+    "options": null
+  }
+]

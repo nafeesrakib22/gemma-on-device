@@ -6,13 +6,7 @@ services:
       - ./models:/models
       - ./system_prompt.txt:/system_prompt.txt
     command: >
-      -m /models/google_gemma-4-E2B-it-Q4_K_M.gguf
-      -c 16384
-      -np 5
-      -t 8
-      -cb
-      --host 0.0.0.0
-      --port 8080
+      -m /models/google_gemma-4-E2B-it-Q4_K_M.gguf -c 16384 -np 4 -t 4 -cb --host 0.0.0.0 --port 8080
     restart: unless-stopped
 
   app:
@@ -24,6 +18,7 @@ services:
     environment:
       - INFERENCE_URL=http://inference:8080/v1/chat/completions
       - PROMPT_TYPE=survey
+      - NUM_SLOTS=4   # must match -np in the inference command above
     depends_on:
       - inference
     restart: unless-stopped

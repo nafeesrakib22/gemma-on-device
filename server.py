@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import asyncio
 import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -15,159 +16,249 @@ load_dotenv()
 # Configuration
 INFERENCE_URL = os.environ.get(
     "INFERENCE_URL",
-    "http://localhost:8000/v1/chat/completions",
+    "http://localhost:8080/v1/chat/completions",
 )
 PROMPT_TYPE = os.environ.get("PROMPT_TYPE", "survey")
 SYSTEM_INSTRUCTION = PROMPTS.get(PROMPT_TYPE, PROMPTS["survey"])
 
-print(f"[INFO] Using Prompt Type: {PROMPT_TYPE}")
-print(f"[INFO] Inference Backend: {INFERENCE_URL}")
+# Number of KV cache slots configured in llama.cpp (-np flag).
+# Must match the -np value in docker-compose.yml command.
+NUM_SLOTS = int(os.environ.get("NUM_SLOTS", "4"))
 
-# Store history as a list of message dicts: {session_id: [messages]}
-session_store = {}
+# Derive the native /completion endpoint from INFERENCE_URL.
+# Works whether INFERENCE_URL ends in /v1/chat/completions or the base URL.
+_base_url = INFERENCE_URL.split("/v1/")[0].split("/completion")[0]
+COMPLETION_URL = _base_url + "/completion"
+HEALTH_URL = _base_url + "/health"
+
+print(f"[INFO] Using Prompt Type:   {PROMPT_TYPE}")
+print(f"[INFO] Inference Backend:   {INFERENCE_URL}")
+print(f"[INFO] Native Completion:   {COMPLETION_URL}")
+print(f"[INFO] KV Slots Available:  {NUM_SLOTS}")
+
+# ─── Session State ────────────────────────────────────────────────────────────
+# session_id -> list of message dicts {role, content}
+session_store: dict[str, list] = {}
+
+# session_id -> assigned slot_id (0 … NUM_SLOTS-1)
+# Once assigned, a session always uses the same slot so the KV cache is reused.
+slot_assignments: dict[str, int] = {}
+_slot_counter = 0  # simple round-robin counter
+
+
+def get_or_assign_slot(session_id: str) -> int:
+    """Return the pinned slot for this session, creating one if needed."""
+    global _slot_counter
+    if session_id not in slot_assignments:
+        slot_assignments[session_id] = _slot_counter % NUM_SLOTS
+        _slot_counter += 1
+        print(f"[INFO] Session '{session_id}' pinned to slot {slot_assignments[session_id]}")
+    return slot_assignments[session_id]
+
+
+# ─── Prompt Formatting ────────────────────────────────────────────────────────
+
+def format_gemma_prompt(messages: list) -> str:
+    """
+    Convert a list of {role, content} messages into Gemma's native chat format.
+
+    Gemma template:
+        <bos><start_of_turn>user
+        {system + user_msg}<end_of_turn>
+        <start_of_turn>model
+        {assistant_msg}<end_of_turn>
+        ...
+        <start_of_turn>model\\n      ← generation prompt
+    """
+    prompt = "<bos>"
+    system_content: str | None = None
+
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+
+        if role == "system":
+            # Store; will be prepended to the first user message only
+            system_content = content
+            continue
+
+        if role == "user":
+            if system_content is not None:
+                content = system_content + "\n\n" + content
+                system_content = None
+            prompt += f"<start_of_turn>user\n{content}<end_of_turn>\n"
+
+        elif role == "assistant":
+            prompt += f"<start_of_turn>model\n{content}<end_of_turn>\n"
+
+    # Final model-turn prefix to trigger generation
+    prompt += "<start_of_turn>model\n"
+    return prompt
+
+
+# ─── Lifespan / Pre-warming ───────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Prepare shared client
     app.state.client = httpx.AsyncClient(timeout=None)
-    
-    # Pre-warming: Initialize sessions to prime the KV cache
-    # We do this in a separate task so as not to block the main server startup
+
     async def warm_up():
-        print("[INFO] Starting sequential pre-warming of 5 KV slots...")
-        # Wait for inference backend to be ready
+        """Prime every KV slot with the system prompt so Turn-1 prefill is minimal."""
+        print(f"[INFO] Starting pre-warming of {NUM_SLOTS} KV slots…")
         retries = 15
         ready = False
         while retries > 0 and not ready:
             try:
-                resp = await app.state.client.get(INFERENCE_URL.replace("/v1/chat/completions", "/health"))
+                resp = await app.state.client.get(HEALTH_URL)
                 if resp.status_code == 200:
                     ready = True
                 else:
                     await asyncio.sleep(3)
-            except:
+            except Exception:
                 await asyncio.sleep(3)
             retries -= 1
-        
+
         if ready:
-            for i in range(1, 6):
-                # Use a specific warm-up message to prime the cache
+            warm_prompt = format_gemma_prompt([
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user",   "content": "হ্যালো"},
+            ])
+            for i in range(NUM_SLOTS):
                 payload = {
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_INSTRUCTION},
-                        {"role": "user", "content": "hi"}
-                    ],
-                    "stream": False,
-                    "max_tokens": 1
+                    "prompt":       warm_prompt,
+                    "slot_id":      i,
+                    "cache_prompt": True,
+                    "n_predict":    1,
+                    "stream":       False,
                 }
                 try:
-                    await app.state.client.post(INFERENCE_URL, json=payload)
-                    print(f"[INFO] Slot {i}/5 primed.", flush=True)
+                    await app.state.client.post(COMPLETION_URL, json=payload)
+                    print(f"[INFO] Slot {i}/{NUM_SLOTS - 1} primed.", flush=True)
                 except Exception as e:
                     print(f"[ERROR] Prime failed for slot {i}: {e}", flush=True)
             print("[INFO] PRE-WARMING COMPLETE. You can now run the benchmark.", flush=True)
         else:
-            print("[WARNING] Pre-warming skipped: Inference backend not reachable.", flush=True)
+            print("[WARNING] Pre-warming skipped: inference backend not reachable.", flush=True)
 
-    import asyncio
     asyncio.create_task(warm_up())
-    
     yield
     await app.state.client.aclose()
 
+
 app = FastAPI(lifespan=lifespan)
+
+
+# ─── Request Model ────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
 
+
+# ─── Chat Endpoint ────────────────────────────────────────────────────────────
+
 @app.post("/chat")
 async def chat_endpoint(chat_req: ChatRequest):
     """
-    Proxies requests to the optimized llama-cpp-python backend.
+    Proxies requests to the llama.cpp native /completion endpoint.
+    Uses slot_id pinning + cache_prompt so the KV cache is reused across turns.
     """
     start_time = time.perf_counter()
     session_id = chat_req.session_id
-    
-    # Initialize session history if new
+
+    # Initialise session history
     if session_id not in session_store:
         session_store[session_id] = [
             {"role": "system", "content": SYSTEM_INSTRUCTION}
         ]
-    
-    # Add current user message
+
+    # Append current user message
     session_store[session_id].append({
-        "role": "user", 
+        "role": "user",
         "content": chat_req.message
     })
+
+    # Build the full prompt and pin to the session's dedicated slot
+    prompt = format_gemma_prompt(session_store[session_id])
+    slot_id = get_or_assign_slot(session_id)
 
     async def generate_response():
         first_token_time = None
         full_response = ""
-        
-        # Disable Gemma 4's thinking tokens via enable_thinking=false.
-        # This is the correct internal parameter name as revealed by the llama.cpp
-        # error: "Assistant response prefill is incompatible with enable_thinking."
+
         payload = {
-            "model": "gemma",
-            "messages": session_store[session_id],
-            "stream": True,
-            "temperature": 1.0,
-            "top_p": 0.95,
-            "top_k": 64,
+            # ── Native llama.cpp parameters ──────────────────────────────
+            "prompt":        prompt,
+            "slot_id":       slot_id,       # pin to this session's KV slot
+            "cache_prompt":  True,          # reuse cached prefix tokens
+            # ── Sampling ────────────────────────────────────────────────
+            "n_predict":     512,
+            "temperature":   1.0,
+            "top_p":         0.95,
+            "top_k":         64,
             "repeat_penalty": 1.2,
             "stop": ["<end_of_turn>", "</s>", "\nUser:", "\nModel:"],
-            "max_tokens": 512
+            # ── Streaming ───────────────────────────────────────────────
+            "stream": True,
         }
 
         try:
-            async with app.state.client.stream("POST", INFERENCE_URL, json=payload) as response:
+            async with app.state.client.stream("POST", COMPLETION_URL, json=payload) as response:
                 async for line in response.aiter_lines():
+                    # Native /completion streams as: "data: {json}"
                     if not line.startswith("data: "):
                         continue
-                    
+
                     data_str = line[6:]
                     if data_str == "[DONE]":
                         break
-                    
+
                     try:
                         chunk = json.loads(data_str)
-                        delta = chunk['choices'][0]['delta']
-                        if 'content' in delta:
-                            text = delta['content']
-                            
-                            if first_token_time is None:
-                                first_token_time = time.perf_counter()
-                                yield json.dumps({
-                                    "type": "metrics", 
-                                    "ttft": first_token_time - start_time
-                                }) + "\n"
-                            
-                            full_response += text
-                            yield json.dumps({"type": "content", "text": text}) + "\n"
-                    except Exception as e:
+                    except json.JSONDecodeError:
                         continue
-                        
+
+                    text = chunk.get("content", "")
+                    stopped = chunk.get("stop", False)
+
+                    if text:
+                        if first_token_time is None:
+                            first_token_time = time.perf_counter()
+                            yield json.dumps({
+                                "type": "metrics",
+                                "ttft": first_token_time - start_time
+                            }) + "\n"
+
+                        full_response += text
+                        yield json.dumps({"type": "content", "text": text}) + "\n"
+
+                    if stopped:
+                        break
+
         except Exception as e:
-            print(f"[ERROR] Proxy failed for session {session_id}: {e}")
+            print(f"[ERROR] Proxy failed for session {session_id} (slot {slot_id}): {e}")
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
-        
-        # Store the completion
+
+        # Persist the assistant turn so the next request's prompt includes it
         session_store[session_id].append({
             "role": "assistant",
             "content": full_response
         })
-        
+
         yield json.dumps({
-            "type": "metrics", 
+            "type": "metrics",
             "total_time": time.perf_counter() - start_time
         }) + "\n"
 
     return StreamingResponse(generate_response(), media_type="application/x-ndjson")
 
+
+# ─── Health ───────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
 
 if __name__ == "__main__":
     import uvicorn
