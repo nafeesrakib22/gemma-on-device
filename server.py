@@ -58,32 +58,34 @@ def get_or_assign_slot(session_id: str) -> int:
 
 # ─── Prompt Formatting ────────────────────────────────────────────────────────
 
-# Regex for stripping any end-of-turn token variants the model may hallucinate.
-# Matches both <end_of_turn> (normal) and \end_of_*_turn> (backslash variant)
-# that appear when BOS is missing. Storing these in history creates a feedback loop.
+# Regex for stripping any hallucinated turn-delimiter artifacts from model output.
+# Gemma 4 uses <turn|> as EOG; the model sometimes emits partial/corrupted variants.
+# Storing these in history creates a feedback loop, so we strip them out.
 import re
-_END_TOKEN_RE = re.compile(r'[<\\]end_of[_a-zA-Z]*turn>')
+_TURN_TOKEN_RE = re.compile(r'<[|]?turn[|]?>|<\\turn[|]?>')
 
 def strip_end_tokens(text: str) -> str:
-    """Remove <end_of_turn> and any hallucinated variants from model output."""
-    return _END_TOKEN_RE.sub('', text).strip()
+    """Remove <turn|> and any hallucinated turn-delimiter variants from model output."""
+    return _TURN_TOKEN_RE.sub('', text).strip()
 
 
 def format_gemma_prompt(messages: list) -> str:
     """
-    Convert a list of {role, content} messages into Gemma's native chat format.
+    Convert a list of {role, content} messages into Gemma 4's native chat format.
 
-    Gemma template:
-        <start_of_turn>user
-        {system + user_msg}<end_of_turn>
-        <start_of_turn>model
-        {assistant_msg}<end_of_turn>
+    Gemma 4 E2B template (from model metadata):
+        <|turn>system
+        {system_prompt}<turn|>
+        <|turn>user
+        {user_msg}<turn|>
+        <|turn>model
+        {assistant_msg}<turn|>
         ...
-        <start_of_turn>model\n      ← generation prompt
+        <|turn>model\n      ← generation prompt (no trailing <turn|>)
 
     NOTE: We do NOT prepend <bos> here. llama.cpp automatically adds the BOS
-    token as specified by the model's metadata. Adding it manually would result
-    in a double-BOS which corrupts generation.
+    token as specified by the model's metadata (add_bos_token = true).
+    Adding it manually would result in a double-BOS which corrupts generation.
     """
     prompt = ""
     system_content: str | None = None
@@ -93,21 +95,21 @@ def format_gemma_prompt(messages: list) -> str:
         content = msg["content"]
 
         if role == "system":
-            # Store; will be prepended to the first user message only
             system_content = content
             continue
 
         if role == "user":
             if system_content is not None:
-                content = system_content + "\n\n" + content
+                # Emit system turn first, then user turn
+                prompt += f"<|turn>system\n{system_content}<turn|>\n"
                 system_content = None
-            prompt += f"<start_of_turn>user\n{content}<end_of_turn>\n"
+            prompt += f"<|turn>user\n{content}<turn|>\n"
 
         elif role == "assistant":
-            prompt += f"<start_of_turn>model\n{content}<end_of_turn>\n"
+            prompt += f"<|turn>model\n{content}<turn|>\n"
 
-    # Final model-turn prefix to trigger generation
-    prompt += "<start_of_turn>model\n"
+    # Final model-turn prefix to trigger generation (no closing <turn|>)
+    prompt += "<|turn>model\n"
     return prompt
 
 
@@ -215,12 +217,13 @@ async def chat_endpoint(chat_req: ChatRequest):
             "top_p":         0.95,
             "top_k":         64,
             "repeat_penalty": 1.2,
+            # Gemma 4 E2B uses <turn|> as the end-of-generation token (token 106).
+            # <|turn> as a stop string prevents the model from roleplaying extra turns.
             "stop": [
-                "<end_of_turn>",
-                "<start_of_turn>",   # prevents model from roleplaying user turns
+                "<turn|>",    # primary EOG token for Gemma 4
+                "<|turn>",    # prevents roleplaying of next turn
+                "<eos>",
                 "</s>",
-                "\nUser:",
-                "\nModel:",
             ],
             # ── Streaming ───────────────────────────────────────────────
             "stream": True,
