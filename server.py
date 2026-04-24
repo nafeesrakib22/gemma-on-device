@@ -59,11 +59,10 @@ def get_or_assign_slot(session_id: str) -> int:
 # ─── Prompt Formatting ────────────────────────────────────────────────────────
 
 # Regex for stripping any end-of-turn token variants the model may hallucinate.
-# llama.cpp stops generation at the exact string "<end_of_turn>" but the model
-# sometimes emits corrupted variants (e.g. <end_of_off_turn>, <end_of_f_turn>).
-# Storing these in history creates a feedback loop, so we strip them out.
+# Matches both <end_of_turn> (normal) and \end_of_*_turn> (backslash variant)
+# that appear when BOS is missing. Storing these in history creates a feedback loop.
 import re
-_END_TOKEN_RE = re.compile(r'<end_of[_a-zA-Z]*turn>')
+_END_TOKEN_RE = re.compile(r'[<\\]end_of[_a-zA-Z]*turn>')
 
 def strip_end_tokens(text: str) -> str:
     """Remove <end_of_turn> and any hallucinated variants from model output."""
@@ -207,14 +206,22 @@ async def chat_endpoint(chat_req: ChatRequest):
             "prompt":        prompt,
             "slot_id":       slot_id,       # pin to this session's KV slot
             "cache_prompt":  True,          # reuse cached prefix tokens
-            "add_bos_token": False,         # llama.cpp adds BOS automatically; avoid double-BOS
+            # NOTE: do NOT set add_bos_token here. llama.cpp adds exactly one
+            # BOS per model config. Our prompt text has no <bos>, so we get
+            # exactly one BOS — the correct state for Gemma.
             # ── Sampling ────────────────────────────────────────────────
             "n_predict":     512,
             "temperature":   1.0,
             "top_p":         0.95,
             "top_k":         64,
             "repeat_penalty": 1.2,
-            "stop": ["<end_of_turn>", "</s>", "\nUser:", "\nModel:"],
+            "stop": [
+                "<end_of_turn>",
+                "<start_of_turn>",   # prevents model from roleplaying user turns
+                "</s>",
+                "\nUser:",
+                "\nModel:",
+            ],
             # ── Streaming ───────────────────────────────────────────────
             "stream": True,
         }
