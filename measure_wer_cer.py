@@ -34,6 +34,7 @@ try:
     NUM_FILES_TO_TEST = int(num_env)
 except ValueError:
     NUM_FILES_TO_TEST = 5
+
 REPORT_PATH      = os.getenv("WER_CER_REPORT_PATH", "wer_cer_report.csv")
 
 ASR_PROMPT       = "Transcribe the provided Khmer audio into Khmer script."
@@ -223,4 +224,14 @@ if results:
     avg_cer = sum(r[1] for r in results) / len(results)
     print(f"Average WER: {avg_wer:.4f}")
     print(f"Average CER: {avg_cer:.4f}")
+
+    # Write summary row to CSV
+    writer = csv.DictWriter(open(REPORT_PATH, "a", newline="", encoding="utf-8"), fieldnames=report_fields)
+    writer.writerow({
+        "file_name":           "AVERAGE_SUMMARY",
+        "wer":                 f"{avg_wer:.4f}",
+        "cer":                 f"{avg_cer:.4f}",
+        "gemma_transcription": f"Based on {len(results)} files",
+        "ground_truth":        "",
+    })
 print("=" * 60)
