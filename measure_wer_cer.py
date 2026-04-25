@@ -25,7 +25,7 @@ load_dotenv()
 
 MODEL_PATH       = os.getenv(
     "MODEL_PATH",
-    "/home/moriarty4k/.litert-lm/models/gemma-e4b/model.litertlm",
+    "/home/moriarty4k/.litert-lm/models/gemma-e2b/model.litertlm",
 )
 AUDIO_DIR_PATH   = os.getenv("AUDIO_DIR_PATH", "./audio_folder")
 TSV_FILE_PATH    = os.getenv("TSV_FILE_PATH",   "./line_index.tsv") # Updated based on list_dir
