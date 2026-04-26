@@ -112,6 +112,29 @@ def calculate_metrics(ground_truth: str, hypothesis: str):
     return wer, cer
 
 # ---------------------------------------------------------------------------
+# Reporting Helper
+# ---------------------------------------------------------------------------
+def save_report(results, stats, path):
+    """Calculates summary and saves the JSON report."""
+    output = {
+        "results": results,
+        "summary": {
+            "total_files": len(results),
+            "average_wer_pct": None,
+            "average_cer_pct": None
+        }
+    }
+    
+    if stats:
+        avg_wer = (sum(s[0] for s in stats) / len(stats)) * 100
+        avg_cer = (sum(s[1] for s in stats) / len(stats)) * 100
+        output["summary"]["average_wer_pct"] = round(avg_wer, 2)
+        output["summary"]["average_cer_pct"] = round(avg_cer, 2)
+        
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+
+# ---------------------------------------------------------------------------
 # Main benchmark loop
 # ---------------------------------------------------------------------------
 processed_results = []
@@ -175,7 +198,7 @@ for idx, entry in enumerate(dataset[:limit], start=1):
     # Step 2: Calculate Metrics
     try:
         wer, cer = calculate_metrics(ground_truth, gemma_transcription)
-        print(f"  WER: {wer:.4f} | CER: {cer:.4f}")
+        print(f"  WER: {wer*100:.2f}% | CER: {cer*100:.2f}%")
     except Exception as exc:
         print(f"  [ERROR] Metrics calculation failed: {exc}")
         wer, cer = None, None
@@ -183,8 +206,8 @@ for idx, entry in enumerate(dataset[:limit], start=1):
     # Collect result
     result_entry = {
         "file_name":           file_name,
-        "wer":                 round(wer, 4) if wer is not None else None,
-        "cer":                 round(cer, 4) if cer is not None else None,
+        "wer_pct":             round(wer * 100, 2) if wer is not None else None,
+        "cer_pct":             round(cer * 100, 2) if cer is not None else None,
         "gemma_transcription": gemma_transcription,
         "ground_truth":        ground_truth,
     }
@@ -193,31 +216,21 @@ for idx, entry in enumerate(dataset[:limit], start=1):
     if wer is not None:
         summary_stats.append((wer, cer))
 
+    # Incremental Save
+    save_report(processed_results, summary_stats, REPORT_PATH)
+
 # ---------------------------------------------------------------------------
-# Summary and JSON Output
+# Final Summary and Output
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print(f"BENCHMARK COMPLETE — {len(processed_results)} files processed")
 
-final_output = {
-    "results": processed_results,
-    "summary": {
-        "total_files": len(processed_results),
-        "average_wer": None,
-        "average_cer": None
-    }
-}
-
 if summary_stats:
-    avg_wer = sum(r[0] for r in summary_stats) / len(summary_stats)
-    avg_cer = sum(r[1] for r in summary_stats) / len(summary_stats)
-    final_output["summary"]["average_wer"] = round(avg_wer, 4)
-    final_output["summary"]["average_cer"] = round(avg_cer, 4)
-    print(f"Average WER: {avg_wer:.4f}")
-    print(f"Average CER: {avg_cer:.4f}")
+    # Final print to terminal (file is already up to date)
+    avg_wer = (sum(r[0] for r in summary_stats) / len(summary_stats)) * 100
+    avg_cer = (sum(r[1] for r in summary_stats) / len(summary_stats)) * 100
+    print(f"Average WER: {avg_wer:.2f}%")
+    print(f"Average CER: {avg_cer:.2f}%")
 
-with open(REPORT_PATH, "w", encoding="utf-8") as f:
-    json.dump(final_output, f, ensure_ascii=False, indent=2)
-
-print(f"Report saved to: {REPORT_PATH}")
+print(f"Final report saved to: {REPORT_PATH}")
 print("=" * 60)
