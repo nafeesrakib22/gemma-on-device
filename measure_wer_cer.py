@@ -9,6 +9,7 @@ logic from benchmark_khmer_asr.py.
 """
 
 import csv
+import json
 import os
 import sys
 import time
@@ -35,7 +36,7 @@ try:
 except ValueError:
     NUM_FILES_TO_TEST = 5
 
-REPORT_PATH      = os.getenv("WER_CER_REPORT_PATH", "wer_cer_report.csv")
+REPORT_PATH      = os.getenv("WER_CER_REPORT_PATH", "wer_cer_report.json")
 
 ASR_PROMPT       = "Transcribe the provided Khmer audio into Khmer script."
 ASR_SYSTEM_PROMPT = """You are a specialized Khmer Automatic Speech Recognition (ASR) system.
@@ -111,24 +112,10 @@ def calculate_metrics(ground_truth: str, hypothesis: str):
     return wer, cer
 
 # ---------------------------------------------------------------------------
-# CSV report
-# ---------------------------------------------------------------------------
-report_fields = [
-    "file_name",
-    "wer",
-    "cer",
-    "gemma_transcription",
-    "ground_truth",
-]
-
-report_file = open(REPORT_PATH, "w", newline="", encoding="utf-8")
-writer = csv.DictWriter(report_file, fieldnames=report_fields)
-writer.writeheader()
-
-# ---------------------------------------------------------------------------
 # Main benchmark loop
 # ---------------------------------------------------------------------------
-results = []
+processed_results = []
+summary_stats = []
 
 for idx, entry in enumerate(dataset[:limit], start=1):
     file_name    = entry["file_name"]
@@ -193,45 +180,44 @@ for idx, entry in enumerate(dataset[:limit], start=1):
         print(f"  [ERROR] Metrics calculation failed: {exc}")
         wer, cer = None, None
 
-    # Cleanup
-    if converted_path and os.path.exists(converted_path):
-        os.remove(converted_path)
-
-    # Write result
-    writer.writerow({
+    # Collect result
+    result_entry = {
         "file_name":           file_name,
-        "wer":                 f"{wer:.4f}" if wer is not None else "N/A",
-        "cer":                 f"{cer:.4f}" if cer is not None else "N/A",
+        "wer":                 round(wer, 4) if wer is not None else None,
+        "cer":                 round(cer, 4) if cer is not None else None,
         "gemma_transcription": gemma_transcription,
         "ground_truth":        ground_truth,
-    })
-    report_file.flush()
+    }
+    processed_results.append(result_entry)
     
     if wer is not None:
-        results.append((wer, cer))
+        summary_stats.append((wer, cer))
 
 # ---------------------------------------------------------------------------
-# Summary
+# Summary and JSON Output
 # ---------------------------------------------------------------------------
-report_file.close()
-
 print("\n" + "=" * 60)
-print(f"BENCHMARK COMPLETE — {len(results)} files processed")
-print(f"Report saved to: {REPORT_PATH}")
+print(f"BENCHMARK COMPLETE — {len(processed_results)} files processed")
 
-if results:
-    avg_wer = sum(r[0] for r in results) / len(results)
-    avg_cer = sum(r[1] for r in results) / len(results)
+final_output = {
+    "results": processed_results,
+    "summary": {
+        "total_files": len(processed_results),
+        "average_wer": None,
+        "average_cer": None
+    }
+}
+
+if summary_stats:
+    avg_wer = sum(r[0] for r in summary_stats) / len(summary_stats)
+    avg_cer = sum(r[1] for r in summary_stats) / len(summary_stats)
+    final_output["summary"]["average_wer"] = round(avg_wer, 4)
+    final_output["summary"]["average_cer"] = round(avg_cer, 4)
     print(f"Average WER: {avg_wer:.4f}")
     print(f"Average CER: {avg_cer:.4f}")
 
-    # Write summary row to CSV
-    writer = csv.DictWriter(open(REPORT_PATH, "a", newline="", encoding="utf-8"), fieldnames=report_fields)
-    writer.writerow({
-        "file_name":           "AVERAGE_SUMMARY",
-        "wer":                 f"{avg_wer:.4f}",
-        "cer":                 f"{avg_cer:.4f}",
-        "gemma_transcription": f"Based on {len(results)} files",
-        "ground_truth":        "",
-    })
+with open(REPORT_PATH, "w", encoding="utf-8") as f:
+    json.dump(final_output, f, ensure_ascii=False, indent=2)
+
+print(f"Report saved to: {REPORT_PATH}")
 print("=" * 60)
