@@ -157,7 +157,10 @@ async def lifespan(app: FastAPI):
         else:
             print("[WARNING] Pre-warming skipped: inference backend not reachable.", flush=True)
 
-    asyncio.create_task(warm_up())
+    if os.environ.get("SKIP_WARMUP", "0") == "1":
+        print("[INFO] Pre-warming SKIPPED (SKIP_WARMUP=1). Turn 1 TTFT will be cold.", flush=True)
+    else:
+        asyncio.create_task(warm_up())
     yield
     await app.state.client.aclose()
 
