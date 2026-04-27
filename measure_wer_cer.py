@@ -78,11 +78,7 @@ with open(TSV_FILE_PATH, newline="", encoding="utf-8") as f:
             dataset.append({"file_name": file_id + ".wav", "ground_truth": sentence})
 
 total_available = len(dataset)
-if NUM_FILES_TO_TEST == -1:
-    limit = total_available
-else:
-    limit = min(NUM_FILES_TO_TEST, total_available)
-print(f"[INFO] Dataset: {total_available} entries — testing {limit}.")
+# Limit calculation moved inside main()
 
 # ---------------------------------------------------------------------------
 # Audio Pre-processing (Exact copy from benchmark_khmer_asr.py)
@@ -126,111 +122,167 @@ def save_report(results, stats, path):
     }
     
     if stats:
-        avg_wer = (sum(s[0] for s in stats) / len(stats)) * 100
-        avg_cer = (sum(s[1] for s in stats) / len(stats)) * 100
+        # For the averages, we cap individual values at 100% (1.0) 
+        # to prevent looping/hallucinations from skewing the overall report.
+        capped_wer = [min(s[0], 1.0) for s in stats]
+        capped_cer = [min(s[1], 1.0) for s in stats]
+        
+        avg_wer = (sum(capped_wer) / len(stats)) * 100
+        avg_cer = (sum(capped_cer) / len(stats)) * 100
+        
         output["summary"]["average_wer_pct"] = round(avg_wer, 2)
         output["summary"]["average_cer_pct"] = round(avg_cer, 2)
+        
+        # New: Filtered averages (excluding catastrophic failures)
+        non_catastrophic = [s for s in stats if s[0] <= 1.0 and s[1] <= 1.0]
+        if non_catastrophic:
+            f_avg_wer = (sum(s[0] for s in non_catastrophic) / len(non_catastrophic)) * 100
+            f_avg_cer = (sum(s[1] for s in non_catastrophic) / len(non_catastrophic)) * 100
+            output["summary"]["filtered_average_wer_pct"] = round(f_avg_wer, 2)
+            output["summary"]["filtered_average_cer_pct"] = round(f_avg_cer, 2)
+            output["summary"]["filtered_total_files"] = len(non_catastrophic)
+        
+        # Count failures where error > 100% (likely looping)
+        failures = [
+            results[i]["file_name"] 
+            for i, s in enumerate(stats) 
+            if s[0] > 1.0 or s[1] > 1.0
+        ]
+        output["summary"]["catastrophic_failures"] = len(failures)
+        output["summary"]["catastrophic_failure_files"] = failures
         
     with open(path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
 # ---------------------------------------------------------------------------
-# Main benchmark loop
+# Main benchmark execution
 # ---------------------------------------------------------------------------
-processed_results = []
-summary_stats = []
-
-for idx, entry in enumerate(dataset[:limit], start=1):
-    file_name    = entry["file_name"]
-    ground_truth = entry["ground_truth"]
-    audio_path   = os.path.join(AUDIO_DIR_PATH, file_name)
-
-    print(f"\n[{idx}/{limit}] Processing: {file_name}")
-
-    if not os.path.isfile(audio_path):
-        print(f"  [WARN] Audio file not found, skipping: {audio_path}")
-        continue
-
-    # Step 0: Pre-process audio
-    converted_path = None
-    try:
-        converted_path = preprocess_audio(audio_path)
-        inference_audio_path = converted_path
-    except Exception as exc:
-        print(f"  [ERROR] Audio pre-processing failed: {exc}")
-        continue
-
-    # Step 1: Transcribe with Gemma
-    gemma_transcription = ""
-    try:
-        user_message = {
-            "role": "user",
-            "content": [
-                {"type": "audio", "path": inference_audio_path},
-                {"type": "text",  "text": ASR_PROMPT},
-            ],
-        }
-        system_message = {
-            "role": "system",
-            "content": [{"type": "text", "text": ASR_SYSTEM_PROMPT}],
-        }
-        with engine.create_conversation(messages=[system_message]) as conversation:
-            t0 = time.perf_counter()
-            response = conversation.send_message(user_message)
-            elapsed = time.perf_counter() - t0
-
-        if isinstance(response, dict) and "content" in response:
-            for item in response["content"]:
-                if item.get("type") == "text":
-                    gemma_transcription += item.get("text", "")
-        else:
-            gemma_transcription = str(response)
-
-        gemma_transcription = gemma_transcription.strip()
-        print(f"  Gemma ({elapsed:.2f}s): {gemma_transcription}")
-
-    except Exception as exc:
-        print(f"  [ERROR] Gemma transcription failed: {exc}")
-        if converted_path and os.path.exists(converted_path):
-            os.remove(converted_path)
-        continue
-
-    # Step 2: Calculate Metrics
-    try:
-        wer, cer = calculate_metrics(ground_truth, gemma_transcription)
-        print(f"  WER: {wer*100:.2f}% | CER: {cer*100:.2f}%")
-    except Exception as exc:
-        print(f"  [ERROR] Metrics calculation failed: {exc}")
-        wer, cer = None, None
-
-    # Collect result
-    result_entry = {
-        "file_name":           file_name,
-        "wer_pct":             round(wer * 100, 2) if wer is not None else None,
-        "cer_pct":             round(cer * 100, 2) if cer is not None else None,
-        "gemma_transcription": gemma_transcription,
-        "ground_truth":        ground_truth,
-    }
-    processed_results.append(result_entry)
+def main():
+    processed_results = []
+    summary_stats = []
     
-    if wer is not None:
-        summary_stats.append((wer, cer))
+    # Check dataset size
+    total_available = len(dataset)
+    if NUM_FILES_TO_TEST == -1:
+        limit = total_available
+    else:
+        limit = min(NUM_FILES_TO_TEST, total_available)
+    print(f"[INFO] Dataset: {total_available} entries — testing {limit}.")
 
-    # Incremental Save
-    save_report(processed_results, summary_stats, REPORT_PATH)
+    for idx, entry in enumerate(dataset[:limit], start=1):
+        file_name    = entry["file_name"]
+        ground_truth = entry["ground_truth"]
+        audio_path   = os.path.join(AUDIO_DIR_PATH, file_name)
 
-# ---------------------------------------------------------------------------
-# Final Summary and Output
-# ---------------------------------------------------------------------------
-print("\n" + "=" * 60)
-print(f"BENCHMARK COMPLETE — {len(processed_results)} files processed")
+        print(f"\n[{idx}/{limit}] Processing: {file_name}")
 
-if summary_stats:
-    # Final print to terminal (file is already up to date)
-    avg_wer = (sum(r[0] for r in summary_stats) / len(summary_stats)) * 100
-    avg_cer = (sum(r[1] for r in summary_stats) / len(summary_stats)) * 100
-    print(f"Average WER: {avg_wer:.2f}%")
-    print(f"Average CER: {avg_cer:.2f}%")
+        if not os.path.isfile(audio_path):
+            print(f"  [WARN] Audio file not found, skipping: {audio_path}")
+            continue
 
-print(f"Final report saved to: {REPORT_PATH}")
-print("=" * 60)
+        # Step 0: Pre-process audio
+        converted_path = None
+        try:
+            converted_path = preprocess_audio(audio_path)
+            inference_audio_path = converted_path
+        except Exception as exc:
+            print(f"  [ERROR] Audio pre-processing failed: {exc}")
+            continue
+
+        # Step 1: Transcribe with Gemma
+        gemma_transcription = ""
+        try:
+            user_message = {
+                "role": "user",
+                "content": [
+                    {"type": "audio", "path": inference_audio_path},
+                    {"type": "text",  "text": ASR_PROMPT},
+                ],
+            }
+            system_message = {
+                "role": "system",
+                "content": [{"type": "text", "text": ASR_SYSTEM_PROMPT}],
+            }
+            with engine.create_conversation(messages=[system_message]) as conversation:
+                t0 = time.perf_counter()
+                response = conversation.send_message(user_message)
+                elapsed = time.perf_counter() - t0
+
+            if isinstance(response, dict) and "content" in response:
+                for item in response["content"]:
+                    if item.get("type") == "text":
+                        gemma_transcription += item.get("text", "")
+            else:
+                gemma_transcription = str(response)
+
+            gemma_transcription = gemma_transcription.strip()
+            print(f"  Gemma ({elapsed:.2f}s): {gemma_transcription}")
+
+        except Exception as exc:
+            print(f"  [ERROR] Gemma transcription failed: {exc}")
+            if converted_path and os.path.exists(converted_path):
+                os.remove(converted_path)
+            continue
+        finally:
+            # Cleanup temp audio
+            if converted_path and os.path.exists(converted_path):
+                os.remove(converted_path)
+
+        # Step 2: Calculate Metrics
+        try:
+            wer, cer = calculate_metrics(ground_truth, gemma_transcription)
+            print(f"  WER: {wer*100:.2f}% | CER: {cer*100:.2f}%")
+        except Exception as exc:
+            print(f"  [ERROR] Metrics calculation failed: {exc}")
+            wer, cer = None, None
+
+        # Collect result
+        result_entry = {
+            "file_name":           file_name,
+            "wer_pct":             round(wer * 100, 2) if wer is not None else None,
+            "cer_pct":             round(cer * 100, 2) if cer is not None else None,
+            "gemma_transcription": gemma_transcription,
+            "ground_truth":        ground_truth,
+        }
+        processed_results.append(result_entry)
+        
+        if wer is not None:
+            summary_stats.append((wer, cer))
+
+        # Incremental Save
+        save_report(processed_results, summary_stats, REPORT_PATH)
+
+    # Final Summary and Output
+    print("\n" + "=" * 60)
+    print(f"BENCHMARK COMPLETE — {len(processed_results)} files processed")
+
+    if summary_stats:
+        # We display the CAPPED average to the terminal as it's more representative of quality
+        capped_wer = [min(r[0], 1.0) for r in summary_stats]
+        capped_cer = [min(r[1], 1.0) for r in summary_stats]
+        
+        avg_wer = (sum(capped_wer) / len(summary_stats)) * 100
+        avg_cer = (sum(capped_cer) / len(summary_stats)) * 100
+        loops = sum(1 for r in summary_stats if r[0] > 1.0 or r[1] > 1.0)
+        
+        print("\nSUMMARY (Capped at 100%):")
+        print(f"  Average WER: {avg_wer:.2f}%")
+        print(f"  Average CER: {avg_cer:.2f}%")
+        
+        non_catastrophic = [s for s in summary_stats if s[0] <= 1.0 and s[1] <= 1.0]
+        if non_catastrophic:
+            f_avg_wer = (sum(s[0] for s in non_catastrophic) / len(non_catastrophic)) * 100
+            f_avg_cer = (sum(s[1] for s in non_catastrophic) / len(non_catastrophic)) * 100
+            print("\nSUMMARY (Filtered — Excludes failures):")
+            print(f"  Average WER: {f_avg_wer:.2f}%")
+            print(f"  Average CER: {f_avg_cer:.2f}%")
+            print(f"  Based on {len(non_catastrophic)} files.")
+
+        if loops > 0:
+            print(f"\nDetected {loops} files with possible model looping (Errors > 100%)")
+
+    print(f"Final report saved to: {REPORT_PATH}")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
