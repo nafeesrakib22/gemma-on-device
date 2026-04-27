@@ -49,7 +49,6 @@ Thumbs.db
 .env 
 #data files
 benchmark_report.csv
-convo_gemini/
 results.json
 models/*
 transcriptions/
