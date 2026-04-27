@@ -56,6 +56,15 @@ def get_or_assign_slot(session_id: str) -> int:
     return slot_assignments[session_id]
 
 
+def reset_state():
+    """Clear all session data and slot assignments."""
+    global _slot_counter
+    session_store.clear()
+    slot_assignments.clear()
+    _slot_counter = 0
+    print("[INFO] Server state RESET (sessions and slots cleared)")
+
+
 # ─── Prompt Formatting ────────────────────────────────────────────────────────
 
 # Regex for stripping any hallucinated turn-delimiter artifacts from model output.
@@ -291,6 +300,13 @@ async def chat_endpoint(chat_req: ChatRequest):
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.post("/reset")
+async def reset_endpoint():
+    """Endpoint for benchmark runner to clear state between runs."""
+    reset_state()
+    return {"status": "reset"}
 
 
 if __name__ == "__main__":
