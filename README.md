@@ -1,32 +1,37 @@
-# Gemma 2b On-Device Chat
+# 🚀 Gemma-4-E2B-it: High-Performance On-Device Chat
 
-A responsive, text-only chat application using the LiteRT-LM (formerly TensorFlow Lite) Python API and the Gemma 2b model. This application features a Gradio-based interface with persistent conversation context and performance metrics.
+A blazingly fast, multi-user chat and agent application powered by the **Gemma-4-E2B-it** model. Designed for low-latency interactions, this project leverages a highly optimized architecture combining `llama.cpp` for native inference, `FastAPI` for concurrent request handling, and `Gradio` for a premium user interface. 
 
-## Features
-- **Text Interaction**: Optimized for fast text-based chat.
-- **Persistent Context**: Uses KV caching to maintain conversation history efficiently across turns.
-- **Performance Metrics**: Reports Time to First Token (TTFT) and Total Generation Time.
-- **Premium UI**: Modern, responsive interface built with Gradio.
+It is built specifically to support complex survey and customer service agents while maintaining strict response formats and sub-second latencies.
 
-## Prerequisites
-- **Python 3.12+**
-- **Docker & Docker Compose** (optional, for containerized deployment)
-- **LiteRT-LM Model**: You need the `model.litertlm` file for Gemma 2b.
+## ✨ Key Features
 
-## Running with Docker (Recommended)
+- ⚡ **Ultra-Low Latency**: Optimized KV-cache management and slot pinning ensure near-instantaneous responses (TTFT < 100ms on RTX 4090).
+- 🧠 **Pre-Warming System**: Automatically caches system prompts at startup, drastically reducing processing time for the first user interaction.
+- 👥 **High Concurrency**: The asynchronous FastAPI proxy efficiently handles multiple simultaneous user sessions without bottlenecking the single-threaded inference engine.
+- 🛠️ **Multi-Agent Support**: Easily switch between predefined system prompts (Survey Agent, Loan Reminder, Support Desk) via environment variables.
+- 📊 **Built-in Benchmarking**: Comprehensive tools to measure Turn-1 TTFT, steady-state latency, and generation speeds under simulated concurrent loads.
 
-1. **Prepare the Model**: Ensure your model file is located in a directory accessible to Docker (e.g., `~/.litert-lm/models/gemma-e2b/model.litertlm`).
+---
 
-2. **Run with Docker Compose**:
-   ```bash
-   docker compose up -d
-   ```
-   *Note: The `docker-compose.yml` is configured to mount `/home/moriarty4k/.litert-lm/models` by default. Adjust the volume mapping in the file if your models are elsewhere.*
+## 🏗️ Architecture
 
-3. **Access the Application**:
-   Open `http://localhost:7860` in your browser.
+The system is decoupled into two primary layers to maximize throughput:
 
-## Manual Installation (Local)
+1. **Inference Backend (`llama.cpp`)**: A bare-metal, highly optimized C++ server handling the heavy lifting of LLM generation. Supports both CPU (via Docker) and native GPU (CUDA) execution.
+2. **API Proxy & State Manager (`FastAPI`)**: A Python middleware layer that isolates user sessions, manages KV cache slots intelligently, and enforces strict generation bounds to prevent model hallucination.
+
+---
+
+## 💻 Getting Started (Local CPU/Docker)
+
+The fastest way to test the application locally is via Docker Compose.
+
+### Prerequisites
+- Docker & Docker Compose
+- The quantized model file: `google_gemma-4-E2B-it-Q4_K_M.gguf`
+
+### Setup
 
 1. **Clone the repository**:
    ```bash
@@ -34,21 +39,73 @@ A responsive, text-only chat application using the LiteRT-LM (formerly TensorFlo
    cd gemma-on-device
    ```
 
-2. **Install dependencies**:
+2. **Prepare the Model**:
+   Place your `.gguf` model file inside the `models/` directory.
+
+3. **Launch the Stack**:
    ```bash
+   docker compose up -d
+   ```
+   *This spins up both the `llama.cpp` inference server and the `FastAPI` backend.*
+
+---
+
+## 🚀 Getting Started (RunPod / GPU Deployment)
+
+For production performance or benchmarking, deploy directly on a GPU instance (e.g., RunPod RTX 4090).
+
+1. **Clone & Setup Environment**:
+   ```bash
+   git clone https://github.com/nafeesrakib22/gemma-on-device.git
+   cd gemma-on-device
+   python3 -m venv gemma-venv
+   source gemma-venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. **Configure Model Path**:
-   Update the `MODEL_PATH` in `app.py` or set the `MODEL_PATH` environment variable.
-
-4. **Start the Application**:
+2. **Build `llama.cpp` with CUDA** (Ensure CUDA toolkit is installed):
    ```bash
-   python app.py
+   cd ~
+   git clone https://github.com/ggml-org/llama.cpp
+   cd llama.cpp
+   cmake -B build -DGGML_CUDA=ON
+   cmake --build build --config Release -j$(nproc)
    ```
 
-## Project Structure
-- `app.py`: Main Gradio application.
-- `Dockerfile`: Container definition with security enhancements and healthchecks.
-- `docker-compose.yml`: Simplified deployment configuration.
-- `requirements.txt`: Python dependencies.
+3. **Download the Model** (Directly to the pod):
+   ```bash
+   pip install huggingface_hub -q
+   python3 -c 'from huggingface_hub import hf_hub_download; hf_hub_download(repo_id="bartowski/google_gemma-4-E2B-it-GGUF", filename="google_gemma-4-E2B-it-Q4_K_M.gguf", local_dir="/workspace/models")'
+   ```
+
+4. **Start the Services**:
+   We provide a convenience script to launch the GPU inference server and the FastAPI proxy sequentially.
+   ```bash
+   # Set the path to your model and start
+   MODEL_PATH=/workspace/models/google_gemma-4-E2B-it-Q4_K_M.gguf ./start.sh
+   ```
+
+---
+
+## 📈 Benchmarking
+
+The repository includes a robust benchmarking suite to test the system under load. It simulates multiple concurrent users and captures detailed latency metrics.
+
+**To run the benchmark (e.g., testing 1, 5, and 10 concurrent users):**
+```bash
+python run_benchmark.py --levels 1,5,10
+```
+
+*Note: For accurate cold-start (Turn 1) measurements, launch the server with `SKIP_WARMUP=1 ./start.sh`.*
+
+---
+
+## 📁 Project Structure
+
+- `server.py`: The core FastAPI proxy, managing sessions and KV cache slots.
+- `start.sh`: Production startup script for GPU environments.
+- `docker-compose.yml`: Local CPU deployment configuration.
+- `prompts.py`: Defines the personas and system instructions for various agents.
+- `run_benchmark.py`: Multi-concurrency benchmarking orchestrator.
+- `benchmark.py`: Core request simulation and metrics gathering logic.
+- `app.py`: (Optional) Gradio-based web interface for manual testing.
