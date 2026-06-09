@@ -89,7 +89,27 @@ For production performance or benchmarking, deploy directly on a GPU instance (e
 
 ## 📈 Benchmarking
 
-The repository includes a robust benchmarking suite to test the system under load. It simulates multiple concurrent users and captures detailed latency metrics.
+The repository includes a benchmarking suite for measuring cold-start latency, steady-state latency, punctuation latency, generation time, GPU utilization, and VRAM usage under concurrent load.
+
+### Benchmark Configuration
+
+| Parameter | Value |
+|---|---|
+| Model | `google_gemma-4-E2B-it-Q4_K_M.gguf` |
+| Context | 16,384 tokens |
+| KV Slots | 10 |
+| GPU | NVIDIA GeForce RTX 4090 (24 GB) |
+| Warmup | Disabled (cold) |
+
+### Benchmark Results
+
+| Concurrency | Avg Turn-1 TTFT | Avg Steady TTFT | Avg TTF Punc | Avg Gen Time | Peak GPU Util | Peak VRAM |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.038s | 0.070s | 0.102s | 0.556s | 62.0% | 2718 MiB |
+| 5 | 0.262s | 0.922s | 1.057s | 2.632s | 93.0% | 2722 MiB |
+| 10 | 0.983s | 3.412s | 3.575s | 5.131s | 96.0% | 2722 MiB |
+
+These results show that the KV-cache slot pinning keeps single-session steady-state TTFT under 100ms, while the FastAPI proxy can scale to 10 concurrent sessions with stable VRAM usage around 2.7 GB.
 
 **To run the benchmark (e.g., testing 1, 5, and 10 concurrent users):**
 ```bash
