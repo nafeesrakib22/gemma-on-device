@@ -23,6 +23,21 @@ The system is decoupled into two primary layers to maximize throughput:
 
 ---
 
+## 🔁 Inference Backend Evolution
+
+This project started with `litert-lm` for local Gemma inference because it provides a simple Python API and strong single-session KV-cache behavior. That made it useful for validating stateful multi-turn chat and measuring simple session latency.
+
+During concurrency testing, the architecture was migrated to `llama.cpp` server. The server-based approach gives finer control over streaming responses, slot-based KV-cache reuse, GPU execution, and concurrent multi-user serving.
+
+| Backend | Strength | Limitation | Role in Project |
+|---|---|---|---|
+| `litert-lm` | Simple Python API and fast single-session stateful chat | Limited control over concurrent multi-session serving | Used for early prototype and KV-cache behavior validation |
+| `llama.cpp` server | Slot pinning, streaming API, GPU serving, and better concurrency control | More setup complexity | Used for the final optimized multi-user architecture |
+
+This progression reflects the main design tradeoff: `litert-lm` is excellent for quickly validating local Gemma sessions, while `llama.cpp` server is better suited for production-style concurrent serving.
+
+---
+
 ## 💻 Getting Started (Local CPU/Docker)
 
 The fastest way to test the application locally is via Docker Compose.
