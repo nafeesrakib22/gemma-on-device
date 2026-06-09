@@ -2,7 +2,7 @@
     "call_date": "2026-03-13T08:28:51.078643+00:00",
     "campaign_id": "30fb9ec0-e8b2-4912-b661-6a51de47c1db",
     "company_id": "559265d5-732c-4cbb-af45-369988acdea5",
-    "destination_number": "REDACTED_PHONE",
+    "destination_number": "",
     "processing_status": "pending",
     "conversation": [
         {
